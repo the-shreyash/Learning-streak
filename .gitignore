@@ -1,0 +1,5 @@
+node_modules/
+dist/
+screenshots/
+tests/e2e/fixtures/
+.DS_Store

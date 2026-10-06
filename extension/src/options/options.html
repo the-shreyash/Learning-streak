@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings · Udemy Learning Streak</title>
+  <link rel="icon" href="../../icons/icon32.png">
+  <link rel="stylesheet" href="../shared/theme.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="page">
+    <header class="page-head">
+      <img src="../../icons/icon48.png" alt="" width="40" height="40">
+      <div>
+        <h1>Settings</h1>
+        <p class="lede">Udemy Learning Streak · <span id="version">v1.0.0</span></p>
+      </div>
+      <div class="head-stat" id="headStat"></div>
+    </header>
+
+    <!-- Daily goal -->
+    <section class="card section">
+      <div class="section-head">
+        <h2>Daily goal</h2>
+        <p>Minutes of lecture content you need to actually watch each day to keep your streak alive.</p>
+      </div>
+      <div class="chips" id="goalChips" role="radiogroup" aria-label="Daily goal presets"></div>
+      <div class="field-row">
+        <label class="field" for="goalCustom">
+          <span>Custom</span>
+          <span class="input-wrap">
+            <input id="goalCustom" type="number" min="1" max="720" step="1" inputmode="numeric">
+            <span class="suffix">minutes</span>
+          </span>
+        </label>
+        <button class="btn btn-primary" id="goalSave">Save goal</button>
+      </div>
+      <p class="hint" id="goalHint">Changing the goal applies to today (if not completed yet) and future days. Past days keep their original goal.</p>
+    </section>
+
+    <!-- Tracking -->
+    <section class="card section">
+      <div class="section-head">
+        <h2>Tracking</h2>
+        <p>Your goal counts <b>lecture content consumed</b>: how far the video really advanced while it was playing. 5 real minutes at 2× = 10 minutes of content. Actual watch time is tracked separately. Dragging the progress bar (seeking) never counts as watching.</p>
+        <p id="trackingPolicy">LearnStreak tracks genuine video playback even when you switch tabs or work in another application. Paused, stopped, ended, frozen, locked, or sleeping sessions are not counted.</p>
+      </div>
+    </section>
+
+    <!-- Notifications -->
+    <section class="card section">
+      <div class="section-head">
+        <h2>Notifications</h2>
+        <p>Quiet, at most one celebration and one reminder per day.</p>
+      </div>
+      <label class="toggle-row">
+        <span class="toggle-text"><b>Enable notifications</b><span>Celebrate when you hit your daily goal.</span></span>
+        <input type="checkbox" class="switch" id="notifEnabled">
+      </label>
+      <label class="toggle-row">
+        <span class="toggle-text"><b>Remind me if I haven't completed today's goal</b><span>Sent once at the time below, only if today is incomplete.</span></span>
+        <input type="checkbox" class="switch" id="reminderEnabled">
+      </label>
+      <div class="field-row">
+        <label class="field" for="reminderTime">
+          <span>Reminder time</span>
+          <span class="input-wrap"><input id="reminderTime" type="time" value="20:00"></span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Data -->
+    <section class="card section">
+      <div class="section-head">
+        <h2>Data</h2>
+        <p>Back up your streak or move it to another browser.</p>
+      </div>
+      <div class="data-actions">
+        <button class="btn" id="exportBtn">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+          Export data
+        </button>
+        <button class="btn" id="importBtn">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          Import data
+        </button>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+        <span class="spacer"></span>
+        <button class="btn btn-danger" id="resetBtn">Reset statistics</button>
+      </div>
+      <div class="import-preview" id="importPreview" hidden>
+        <div class="ip-summary" id="importSummary"></div>
+        <div class="ip-actions">
+          <label class="radio"><input type="radio" name="importMode" value="merge" checked> <span><b>Merge</b> — keep the higher value for each day</span></label>
+          <label class="radio"><input type="radio" name="importMode" value="replace"> <span><b>Replace</b> — overwrite everything with the file</span></label>
+          <div class="ip-buttons">
+            <button class="btn" id="importCancel">Cancel</button>
+            <button class="btn btn-primary" id="importConfirm">Import</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="privacy">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <p><b>Your learning data is stored locally in your browser.</b> This extension does not send your Udemy activity to an external server. No analytics, no tracking, no accounts. It only measures time — it never changes your Udemy course progress.</p>
+    </section>
+
+    <!-- Developer tools: rendered only when DEBUG_TOOLS = true in src/config/config.js -->
+    <section class="card section debug" id="debugPanel" hidden>
+      <div class="section-head">
+        <h2>Developer tools</h2>
+        <p>Simulation only — enabled via <code>DEBUG_TOOLS</code> in <code>src/config/config.js</code>. <span id="debugClock"></span></p>
+      </div>
+      <div class="data-actions">
+        <button class="btn" data-debug="addMinutes" data-minutes="10">+10 minutes</button>
+        <button class="btn" data-debug="addMinutes" data-minutes="30">+30 minutes</button>
+        <button class="btn" data-debug="addMinutes" data-minutes="60">+60 minutes</button>
+        <button class="btn" data-debug="addMinutes" data-minutes="10" data-rate="2">+10 min content at 2×</button>
+        <button class="btn" data-debug="completeToday">Complete today</button>
+        <button class="btn" data-debug="nextDay">Move to next day →</button>
+        <button class="btn" data-debug="resetClock">Reset clock</button>
+        <button class="btn" data-debug="seedHistory">Seed 90 days</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- Confirm dialog -->
+  <dialog id="confirmDialog" class="dialog">
+    <form method="dialog">
+      <h3 id="confirmTitle">Are you sure?</h3>
+      <p id="confirmBody"></p>
+      <label class="field confirm-field" id="confirmTypeWrap" hidden>
+        <span>Type <b>RESET</b> to confirm</span>
+        <span class="input-wrap"><input id="confirmType" autocomplete="off"></span>
+      </label>
+      <div class="dialog-actions">
+        <button class="btn" value="cancel">Cancel</button>
+        <button class="btn btn-danger" value="ok" id="confirmOk">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

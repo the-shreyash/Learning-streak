@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Udemy Learning Streak",
+  "short_name": "Learning Streak",
+  "version": "1.2.1",
+  "description": "Personal daily learning streak for Udemy. Counts lecture content you actively watch (speed-aware). 100% local.",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Udemy Learning Streak",
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "options_ui": {
+    "page": "src/options/options.html",
+    "open_in_tab": true
+  },
+  "background": {
+    "service_worker": "src/background/serviceWorker.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "alarms", "notifications", "idle", "scripting"],
+  "host_permissions": ["https://*.udemy.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://*.udemy.com/*"],
+      "js": [
+        "src/content/activityRules.js",
+        "src/content/udemyDetector.js",
+        "src/content/videoTracker.js",
+        "src/content/activityTracker.js",
+        "src/content/main.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

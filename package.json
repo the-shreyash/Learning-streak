@@ -1,0 +1,22 @@
+{
+  "name": "udemy-learning-streak",
+  "version": "1.2.1",
+  "private": true,
+  "description": "Personal Udemy learning streak Chrome extension (Manifest V3, local-only).",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/unit/*.test.mjs",
+    "test:e2e": "node tests/e2e/run-e2e.mjs",
+    "test:debug": "node tests/e2e/debug-tools.mjs",
+    "check": "node scripts/check.mjs",
+    "build": "node scripts/check.mjs && node --test tests/unit/*.test.mjs && node scripts/build.mjs",
+    "icons": "node scripts/generate-icons.mjs",
+    "screenshots": "node scripts/screenshots.mjs screenshots",
+    "test:speed": "node tests/e2e/run-speed.mjs",
+    "test:background": "node tests/e2e/run-background.mjs",
+    "test:upgrade": "node tests/e2e/upgrade.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

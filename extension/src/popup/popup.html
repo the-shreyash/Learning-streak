@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Learning Streak</title>
+  <link rel="stylesheet" href="../shared/theme.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="flameGrad" x1="0.5" y1="0" x2="0.5" y2="1">
+        <stop offset="0" stop-color="#ffd25a"/><stop offset="0.55" stop-color="#ff8a1f"/><stop offset="1" stop-color="#f2451d"/>
+      </linearGradient>
+      <linearGradient id="flameCore" x1="0.5" y1="0" x2="0.5" y2="1">
+        <stop offset="0" stop-color="#fff6cf"/><stop offset="1" stop-color="#ffc23d"/>
+      </linearGradient>
+      <symbol id="flame" viewBox="0 0 128 128">
+        <path class="flame-outer" d="M64 14 C 71 34, 96 46, 96 74 C 96 96, 81 112, 64 112 C 47 112, 32 96, 32 76 C 32 60, 41 49, 49 42 C 49 55, 55 62, 60 63 C 57 48, 59 30, 64 14 Z"/>
+        <path class="flame-inner" d="M64 62 C 69 74, 81 78, 81 91 C 81 102, 73 110, 64 110 C 55 110, 47 102, 47 92 C 47 83, 55 78, 58 72 C 60 78, 63 80, 66 80 C 64 74, 63 68, 64 62 Z"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <img src="../../icons/icon32.png" alt="" width="18" height="18">
+        <span>Learning Streak</span>
+      </div>
+      <div class="status" id="status" data-state="idle" title="">
+        <span class="status-dot"></span><span id="statusText">Idle</span>
+      </div>
+      <button class="icon-btn" id="openSettings" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </header>
+
+    <!-- ===================== Dashboard ===================== -->
+    <main id="viewDashboard" class="view">
+      <section class="hero card" id="hero" data-flame="off">
+        <div class="hero-glow"></div>
+        <div class="hero-main">
+          <svg class="hero-flame" aria-hidden="true"><use href="#flame"/></svg>
+          <div class="streak-num num" id="streakNum">0</div>
+        </div>
+        <div class="streak-label">Day streak</div>
+        <div class="streak-sub" id="streakSub">&nbsp;</div>
+        <div class="week" id="weekStrip" aria-label="This week"></div>
+      </section>
+
+      <section class="card progress-card">
+        <div class="row">
+          <span class="eyebrow">Today's learning</span>
+          <span class="pct num" id="pct">0%</span>
+        </div>
+        <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="bar">
+          <div class="bar-fill" id="barFill"></div>
+        </div>
+        <div class="row">
+          <span class="today-big num"><b id="todayMin">0m 00s</b><span class="sep"> / </span><span id="goalMin">60m</span></span>
+          <span class="remaining" id="remaining"></span>
+        </div>
+        <div class="row sub-metrics">
+          <span title="Real time you spent actively watching today. Your goal uses lecture content consumed (above), which grows faster at higher playback speeds.">Actual watch time <b class="num" id="activeToday">0m 00s</b></span>
+          <span class="speed-chip num" id="speedChip" hidden title="Current playback speed">1×</span>
+        </div>
+      </section>
+
+      <section class="card course-card">
+        <div class="course-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></svg>
+        </div>
+        <div class="course-text">
+          <div class="eyebrow" id="courseLabel">Current course</div>
+          <div class="course-title" id="courseTitle">Udemy Learning</div>
+        </div>
+      </section>
+
+      <section class="card stats">
+        <div class="stat"><div class="eyebrow">Today</div><div class="stat-val num" id="statToday">0m</div></div>
+        <div class="stat"><div class="eyebrow">This week</div><div class="stat-val num" id="statWeek">0m</div></div>
+        <div class="stat"><div class="eyebrow">Best</div><div class="stat-val num" id="statBest">0 days</div></div>
+        <div class="stat"><div class="eyebrow">Total</div><div class="stat-val num" id="statTotal">0m</div></div>
+      </section>
+
+      <button class="btn cal-btn" id="openCalendar">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        View calendar
+      </button>
+    </main>
+
+    <!-- ===================== Calendar ===================== -->
+    <main id="viewCalendar" class="view" hidden>
+      <div class="cal-head">
+        <button class="icon-btn" id="calBack" title="Back" aria-label="Back">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <h2 class="cal-title" id="monthTitle">Month</h2>
+        <div class="cal-nav">
+          <button class="icon-btn" id="calPrev" title="Previous month" aria-label="Previous month">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <button class="icon-btn" id="calNext" title="Next month" aria-label="Next month">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <section class="card cal-card">
+        <div class="cal-summary">
+          <div><div class="eyebrow">Goal days</div><div class="cal-sum-val num" id="calDays">0</div></div>
+          <div><div class="eyebrow">Time</div><div class="cal-sum-val num" id="calTime">0m</div></div>
+          <div><div class="eyebrow">Active days</div><div class="cal-sum-val num" id="calMonthTotal">0</div></div>
+        </div>
+        <div class="cal-weekdays"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="legend">
+          <span>Less</span>
+          <i class="lv lv0"></i><i class="lv lv1"></i><i class="lv lv2"></i><i class="lv lv3"></i>
+          <span>Goal</span>
+          <span class="legend-detail" id="calHover"></span>
+        </div>
+      </section>
+
+      <section class="card courses-card">
+        <div class="eyebrow">By course · all time</div>
+        <ol class="course-list" id="courseList"></ol>
+      </section>
+    </main>
+
+    <!-- ===================== Celebration ===================== -->
+    <div class="celebrate" id="celebrate" hidden role="dialog" aria-modal="true" aria-labelledby="celebrateTitle">
+      <div class="celebrate-inner">
+        <div class="sparks" id="sparks"></div>
+        <svg class="celebrate-flame" aria-hidden="true"><use href="#flame"/></svg>
+        <div class="celebrate-title" id="celebrateTitle">60 minutes complete</div>
+        <div class="celebrate-streak num" id="celebrateStreak">Day 1 streak</div>
+        <div class="celebrate-sub">Keep going!</div>
+        <button class="btn btn-primary" id="celebrateClose">Nice!</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
