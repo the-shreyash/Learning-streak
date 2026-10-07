@@ -5,6 +5,8 @@ import { computeStreaks } from '../core/streakEngine.js';
 import { todayKeyFor, effectiveOffset } from '../core/clock.js';
 import { pluralize } from '../core/format.js';
 import { exportData, readImportFile, renderImportSummary, submitImport } from './importExport.js';
+import { libraryItemsOf } from '../core/learningLibrary.js';
+import { platformLabel } from '../platforms/registry.js';
 
 const $ = (id) => document.getElementById(id);
 let state = null;
@@ -88,8 +90,72 @@ function renderDebug() {
   $('debugClock').textContent = `Simulated today: ${todayKeyFor(state)}${off ? ` (clock +${Math.round(off / 86_400_000)}d)` : ''}`;
 }
 
+// ---------------------------------------------------------------------------
+// Learning Library
+const TYPE_LABEL = { video: 'Video', playlist: 'Playlist' };
+
+/** The user's title, else the title learned while watching, else the video ID. */
+function libraryTitle(item) {
+  return item.title || state.courses[`${item.platform}:${item.type}:${item.targetId}`]?.title || `YouTube video ${item.targetId}`;
+}
+
+function renderLibrary() {
+  const items = libraryItemsOf(state.library);
+  const list = $('libList');
+  if (!items.length) {
+    list.replaceChildren(el('li', { class: 'lib-empty', text: 'No learning content yet. Add a YouTube video to start counting it.' }));
+    return;
+  }
+  list.replaceChildren(...items.map((item) => {
+    const toggle = el('input', { type: 'checkbox', class: 'switch', 'aria-label': `Count ${libraryTitle(item)}`, 'data-lib-toggle': item.id });
+    toggle.checked = item.enabled;
+    toggle.addEventListener('change', () => libraryRequest({ type: 'library:setEnabled', id: item.id, enabled: toggle.checked }, toggle.checked ? 'Enabled — this video counts' : 'Disabled — this video no longer counts'));
+    const del = el('button', { class: 'btn btn-danger lib-del', text: 'Delete', 'data-lib-delete': item.id });
+    del.addEventListener('click', async () => {
+      const ok = await confirmDialog({ title: 'Delete from Learning Library?', body: `"${libraryTitle(item)}" will no longer count as learning. Time you already learned stays in your history.`, okLabel: 'Delete' });
+      if (ok) libraryRequest({ type: 'library:remove', id: item.id }, 'Removed from your Learning Library');
+    });
+    const meta = [platformLabel(item.platform), TYPE_LABEL[item.type] || item.type, item.subject].filter(Boolean).join(' • ');
+    return el('li', { class: 'lib-item', 'data-lib-id': item.id, 'data-enabled': String(item.enabled) },
+      el('span', { class: 'lib-text' }, el('b', { text: libraryTitle(item), title: libraryTitle(item) }), el('span', { class: 'lib-meta', text: meta })),
+      el('span', { class: 'lib-state', text: item.enabled ? 'Enabled' : 'Disabled' }),
+      toggle,
+      del);
+  }));
+}
+
+async function libraryRequest(msg, message) {
+  try {
+    await sendToBackground(msg);
+    toast(message);
+  } catch (e) {
+    toast(e.message, { error: true });
+    renderLibrary(); // undo an optimistic toggle
+  }
+}
+
+function showLibraryForm(open) {
+  $('libForm').hidden = !open;
+  $('libAddOpen').hidden = open;
+  $('libError').hidden = true;
+  if (open) { $('libUrl').value = ''; $('libTitle').value = ''; $('libSubject').value = ''; $('libUrl').focus(); }
+}
+
+async function submitLibraryForm(e) {
+  e.preventDefault();
+  const res = await chrome.runtime.sendMessage({ type: 'library:add', url: $('libUrl').value, title: $('libTitle').value, subject: $('libSubject').value }).catch((err) => ({ ok: false, error: err.message }));
+  if (!res?.ok) {
+    $('libError').textContent = res?.error || 'Couldn\'t add this video.';
+    $('libError').hidden = false;
+    return;
+  }
+  showLibraryForm(false);
+  toast(res.playlistIgnored ? 'Video added (playlist ignored — single videos only)' : 'Added to your Learning Library');
+}
+
 function render() {
   renderGoal();
+  renderLibrary();
   renderToggles();
   renderHeader();
   renderDebug();
@@ -112,6 +178,11 @@ function bind() {
   $('notifEnabled').addEventListener('change', (e) => saveSettings({ notificationsEnabled: e.target.checked }));
   $('reminderEnabled').addEventListener('change', (e) => saveSettings({ reminderEnabled: e.target.checked }, e.target.checked ? `Reminder set for ${$('reminderTime').value}` : 'Reminder off'));
   $('reminderTime').addEventListener('change', (e) => { if (e.target.value) saveSettings({ reminderTime: e.target.value }, `Reminder set for ${e.target.value}`); });
+
+  $('libAddOpen').addEventListener('click', () => showLibraryForm(true));
+  $('libCancel').addEventListener('click', () => showLibraryForm(false));
+  $('libForm').addEventListener('submit', submitLibraryForm);
+  if (location.hash === '#library') setTimeout(() => { $('library').scrollIntoView(); showLibraryForm(true); }, 0);
 
   $('exportBtn').addEventListener('click', async () => {
     try { await exportData(); toast('Exported your streak data'); } catch (e) { toast(`Export failed: ${e.message}`, { error: true }); }

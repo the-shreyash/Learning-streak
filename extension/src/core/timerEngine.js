@@ -109,9 +109,11 @@ export function applyCredit(prevState, credit, { clockOffsetMs = 0 } = {}) {
 
   const effectiveEnd = endMs + clockOffsetMs;
   const completedDays = [];
+  const parts = []; // V2: the exact per-day split, so the Learning Engine can attribute it without re-deriving
   for (const part of splitCreditByDay(effectiveEnd, applied)) {
     const share = part.seconds / applied;
     if (addToDay(state, part.dayKey, part.seconds, appliedContent * share, effectiveEnd)) completedDays.push(part.dayKey);
+    parts.push({ dayKey: part.dayKey, active: part.seconds, content: appliedContent * share });
   }
 
   const course = sanitizeCourse(credit.course);
@@ -128,7 +130,7 @@ export function applyCredit(prevState, credit, { clockOffsetMs = 0 } = {}) {
   }
 
   refreshLongest(state, toDayKey(effectiveEnd));
-  return { state, appliedSeconds: applied, appliedContent, completedDays };
+  return { state, appliedSeconds: applied, appliedContent, completedDays, parts, effectiveEnd };
 }
 
 /**

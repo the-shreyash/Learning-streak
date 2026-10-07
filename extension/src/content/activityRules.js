@@ -108,6 +108,8 @@
    */
   function evaluateConditions(s) {
     if (!s.onLearnPage) return { ok: false, reason: 'not-learn-page' };
+    // V2.1: the site adapter's verdict (e.g. YouTube video not in the Learning Library).
+    if (s.gate && s.gate.ok === false) return { ok: false, reason: s.gate.reason || 'not-registered' };
     if (!s.hasVideo) return { ok: false, reason: 'no-video' };
     if (s.systemLocked) return { ok: false, reason: 'locked' };
     if (s.frozen) return { ok: false, reason: 'frozen' }; // page lifecycle frozen by the browser
@@ -126,6 +128,12 @@
     'ended': 'Lecture ended — paused',
     'paused': 'Video paused',
     'buffering': 'Video buffering — paused',
+    // V2.1 (YouTube)
+    'not-registered': 'Not registered as learning — add it to your Learning Library to count it',
+    'disabled': 'Disabled in your Learning Library — not counted',
+    'checking': 'Checking your Learning Library…',
+    'loading': 'Loading the video — paused',
+    'ad': 'Ad playing — not counted',
   });
 
   NS.RULES = RULES;

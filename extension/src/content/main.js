@@ -1,6 +1,9 @@
 /**
- * Content-script orchestrator. Runs on Udemy pages; stays dormant (a cheap URL
- * check every few seconds) except on course lecture pages (/course/<slug>/learn/…).
+ * Content-script orchestrator. Runs on Udemy and YouTube pages; stays dormant (a
+ * cheap URL check every few seconds) except on content pages — Udemy lecture
+ * pages (/course/<slug>/learn/…) and YouTube watch pages (/watch?v=…).
+ * V2.1: what is on the page and whether it may count is the site adapter's job
+ * (sites.js); this loop — how time is measured — is shared and unchanged.
  *
  * Measurement loop (see activityRules.js for the counting rule):
  *   every TICK_MS while a video plays, and immediately on every relevant event
@@ -22,8 +25,8 @@
 (function (root) {
   'use strict';
   const NS = root.__UdemyStreak;
-  if (!NS || !NS.VideoTracker || !NS.ActivityTracker || !NS.udemyDetector) return;
-  const { RULES, measureInterval, evaluateConditions, udemyDetector, VideoTracker, ActivityTracker } = NS;
+  if (!NS || !NS.VideoTracker || !NS.ActivityTracker || !NS.sites) return;
+  const { RULES, measureInterval, evaluateConditions, VideoTracker, ActivityTracker } = NS;
   const doc = root.document;
 
   // ---- Single-instance guard ---------------------------------------------------
@@ -44,18 +47,15 @@
     hasVideo: false,
     counting: false,
     reason: 'not-learn-page',
-    baseline: null,            // { video, perf, media, rate, src }
+    baseline: null,            // { video, perf, media, rate, src, key }
     pendingActive: 0,          // measured real seconds, not yet sent
     pendingContent: 0,         // measured lecture-content seconds, not yet sent
     pendingEndMs: 0,           // real timestamp of the last credited instant
-    inFlightActive: 0,         // sent, awaiting acknowledgement
-    inFlightContent: 0,
+    pendingKey: null,          // content the pending time belongs to (site.contentKey())
+    outbox: [],                // sealed chunks { active, content, endMs, key }, sent in order
     currentRate: 1,             // last observed video.playbackRate (for the popup)
     lastFlushPerf: performance.now(),
     flushing: false,
-    flushAgain: false,
-    course: null,
-    courseCache: Object.create(null), // slug → confident title
     timer: null,
     observer: null,
     mutationPending: false,
@@ -67,29 +67,18 @@
 
   const videos = new VideoTracker(doc);
   const activity = new ActivityTracker({ onChange: () => tick(), signal });
-
-  // ---- Course detection ----------------------------------------------------------
-  function refreshCourse() {
-    if (!s.onLearnPage) { s.course = null; return; }
-    const slug = udemyDetector.getCourseSlug(root.location);
-    if (!slug) { s.course = null; return; }
-    if (s.courseCache[slug]) { s.course = { key: slug, title: s.courseCache[slug] }; return; }
-    const detected = udemyDetector.detectCourse(doc, root.location);
-    if (detected) {
-      if (detected.confident) s.courseCache[slug] = detected.title;
-      s.course = { key: detected.key, title: detected.title };
-    }
-  }
+  const site = NS.sites.create({ doc, videos, send: (m) => send(m), requestTick: () => setTimeout(() => tick(), 0) });
+  if (!site) return;
 
   // ---- SPA navigation ---------------------------------------------------------------
   function checkUrl() {
     if (root.location.href === s.href) return;
     s.href = root.location.href;
     const was = s.onLearnPage;
-    s.onLearnPage = udemyDetector.isLearnPage(root.location);
+    s.onLearnPage = site.isContentPage();
     if (s.onLearnPage && !was) startObserver();
     if (!s.onLearnPage && was) stopObserver();
-    refreshCourse();
+    site.refresh(s.onLearnPage);
   }
 
   function startObserver() {
@@ -116,6 +105,9 @@
     const b = s.baseline;
     s.baseline = null;
     if (!b || !b.video) return;
+    // The content changed during the interval (e.g. YouTube SPA navigation to
+    // another video): nothing in it can be attributed to either video → drop it.
+    if (b.key !== site.contentKey()) return;
     // Always measure the SAME element the interval started on. A replaced element
     // (connected=false) or a new source yields 0; the next interval starts fresh.
     const { active, content } = measureInterval(
@@ -124,6 +116,8 @@
       { seeked },
     );
     if (active > 0 || content > 0) {
+      if (s.pendingKey !== b.key) seal(); // never mix two contents in one credit
+      s.pendingKey = b.key;
       s.pendingActive += active;
       s.pendingContent += content;
       s.pendingEndMs = Date.now();
@@ -138,13 +132,14 @@
     closeInterval(nowPerf, !!opts.seeked);
     checkUrl();
 
-    const video = s.onLearnPage ? videos.getActiveVideo() : null;
+    const video = s.onLearnPage ? site.pickVideo(videos) : null;
     s.hasVideo = !!video;
     const vs = VideoTracker.snapshot(video) || {};
-    const cond = evaluateConditions({ onLearnPage: s.onLearnPage, hasVideo: !!video, ...vs, ...activity.snapshot() });
+    const gate = s.onLearnPage ? site.gate(video) : null;
+    const cond = evaluateConditions({ onLearnPage: s.onLearnPage, gate, hasVideo: !!video, ...vs, ...activity.snapshot() });
 
     if (cond.ok) {
-      s.baseline = { video, perf: nowPerf, media: vs.currentTime, rate: vs.playbackRate > 0 ? vs.playbackRate : 1, src: video.currentSrc };
+      s.baseline = { video, perf: nowPerf, media: vs.currentTime, rate: vs.playbackRate > 0 ? vs.playbackRate : 1, src: video.currentSrc, key: site.contentKey() };
     }
     if (video) s.currentRate = vs.playbackRate > 0 ? vs.playbackRate : 1;
     s.counting = cond.ok;
@@ -152,7 +147,7 @@
 
     const due = nowPerf - s.lastFlushPerf >= RULES.FLUSH_MS;
     if (hasPending() && (!cond.ok || due || opts.forceFlush)) flush();
-    if (due && !s.course) refreshCourse();
+    if (due) site.maintain(s.onLearnPage);
 
     sendStatusIfChanged(nowPerf);
     schedule(video);
@@ -178,45 +173,51 @@
     });
   }
 
-  function hasPending() { return s.pendingActive > 0 || s.pendingContent > 0; }
+  function hasPending() { return s.pendingActive > 0 || s.pendingContent > 0 || s.outbox.length > 0; }
 
-  async function flush() {
-    if (s.flushing) { s.flushAgain = true; return; }
-    if (!hasPending()) return;
-    const active = s.pendingActive;
-    const content = s.pendingContent;
-    const endMs = s.pendingEndMs || Date.now();
+  /** Move the pending time into the outbox as one chunk for one content. */
+  function seal() {
+    if (!(s.pendingActive > 0 || s.pendingContent > 0)) return;
+    s.outbox.push({ active: s.pendingActive, content: s.pendingContent, endMs: s.pendingEndMs || Date.now(), key: s.pendingKey });
     s.pendingActive = 0;
     s.pendingContent = 0;
-    s.inFlightActive = active;
-    s.inFlightContent = content;
+  }
+
+  const unsaved = (f) => s.outbox.reduce((a, c) => a + c[f], f === 'active' ? s.pendingActive : s.pendingContent);
+
+  /** Send every sealed chunk, oldest first. A chunk leaves the outbox only once delivered. */
+  async function flush() {
+    seal();
     s.lastFlushPerf = performance.now();
+    if (s.flushing || !s.outbox.length) return; // a running flush drains what was just sealed
     s.flushing = true;
     try {
-      refreshCourse();
-      await send({ type: 'tracker:credit', active, content, endMs, course: s.course, counting: s.counting });
-    } catch {
-      if (!contextValid()) { teardown(); return; }
-      // Background unreachable (e.g. worker restarting): keep the time and retry.
-      s.pendingActive += active;
-      s.pendingContent += content;
-      s.pendingEndMs = Math.max(s.pendingEndMs, endMs);
+      while (s.outbox.length && alive) {
+        const chunk = s.outbox[0];
+        site.refresh(s.onLearnPage);
+        let res;
+        try {
+          res = await send({ type: 'tracker:credit', active: chunk.active, content: chunk.content, endMs: chunk.endMs, ...site.creditFields(chunk.key), counting: s.counting });
+        } catch {
+          if (!contextValid()) { teardown(); return; }
+          break; // background unreachable (e.g. worker restarting): keep the chunk, retry on the next flush
+        }
+        s.outbox.shift();
+        if (site.onCreditResponse) site.onCreditResponse(res, chunk.key);
+      }
     } finally {
-      s.inFlightActive = 0;
-      s.inFlightContent = 0;
       s.flushing = false;
-      if (s.flushAgain && alive) { s.flushAgain = false; flush(); }
     }
   }
 
   function sendStatusIfChanged(nowPerf) {
-    const key = `${s.counting}|${s.reason}|${s.course ? s.course.key : ''}`;
+    const key = `${s.counting}|${s.reason}|${site.statusKey()}`;
     // While locked, poll occasionally so we notice the unlock even if a broadcast was missed.
     const lockPoll = s.reason === 'locked' && nowPerf - s.lastLockPollPerf > RULES.IDLE_SCAN_MS;
     if (key === s.lastStatusKey && !lockPoll) return;
     s.lastStatusKey = key;
     s.lastLockPollPerf = nowPerf;
-    send({ type: 'tracker:status', counting: s.counting, reason: s.reason, course: s.course }).catch(() => {});
+    send({ type: 'tracker:status', counting: s.counting, reason: s.reason, ...site.statusFields() }).catch(() => {});
   }
 
   function onRuntimeMessage(msg, _sender, sendResponse) {
@@ -228,11 +229,16 @@
         hasVideo: s.hasVideo,
         counting: s.counting,
         reason: s.reason,
-        unsavedActive: s.pendingActive + s.inFlightActive,
-        unsavedContent: s.pendingContent + s.inFlightContent,
+        unsavedActive: unsaved('active'),
+        unsavedContent: unsaved('content'),
         playbackRate: s.hasVideo ? s.currentRate : null,
-        course: s.course,
+        platform: site.platform,
+        ...site.statusFields(),
       });
+      return false;
+    }
+    if (site.onMessage && site.onMessage(msg)) {
+      tick();
       return false;
     }
     if (msg.type === 'system:lock') {
@@ -258,10 +264,11 @@
 
   // Media events don't bubble, but they DO pass through the capture phase of the
   // document — one listener set covers every current and future <video>.
-  const MEDIA_EVENTS = ['play', 'playing', 'pause', 'ended', 'seeking', 'seeked', 'ratechange', 'emptied', 'loadedmetadata', 'waiting', 'stalled', 'canplay'];
+  const MEDIA_EVENTS = ['play', 'playing', 'pause', 'ended', 'seeking', 'seeked', 'ratechange', 'emptied', 'loadedmetadata', 'waiting', 'stalled', 'canplay', ...site.extraMediaEvents];
   const onMedia = (e) => {
     if (!e.target || e.target.tagName !== 'VIDEO') return;
     videos.noteMediaEvent(e);
+    if (site.onMedia) site.onMedia(e);
     tick({ seeked: e.type === 'seeking' || e.type === 'emptied' });
   };
   for (const type of MEDIA_EVENTS) doc.addEventListener(type, onMedia, { capture: true, signal });
@@ -274,12 +281,14 @@
   doc.addEventListener('timeupdate', (e) => {
     const b = s.baseline;
     if (!b || e.target !== b.video) return;
-    if (performance.now() - b.perf >= RULES.TICK_MS) tick();
+    // The content switched under a running interval (SPA navigation): stop at once.
+    if (b.key !== site.contentKey() || performance.now() - b.perf >= RULES.TICK_MS) tick();
   }, { capture: true, signal });
 
   root.addEventListener('pagehide', () => tick({ forceFlush: true }), { capture: true, signal });
   root.addEventListener('popstate', () => tick(), { signal });
   doc.addEventListener('fullscreenchange', () => tick(), { signal });
+  for (const type of site.navigationEvents) doc.addEventListener(type, () => tick(), { capture: true, signal });
 
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
   tick();

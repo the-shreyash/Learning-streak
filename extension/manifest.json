@@ -29,7 +29,7 @@
     "type": "module"
   },
   "permissions": ["storage", "alarms", "notifications", "idle", "scripting"],
-  "host_permissions": ["https://*.udemy.com/*"],
+  "host_permissions": ["https://*.udemy.com/*", "https://www.youtube.com/*"],
   "content_scripts": [
     {
       "matches": ["https://*.udemy.com/*"],
@@ -38,6 +38,20 @@
         "src/content/udemyDetector.js",
         "src/content/videoTracker.js",
         "src/content/activityTracker.js",
+        "src/content/sites.js",
+        "src/content/main.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": [
+        "src/content/activityRules.js",
+        "src/content/youtubeDetector.js",
+        "src/content/videoTracker.js",
+        "src/content/activityTracker.js",
+        "src/content/sites.js",
         "src/content/main.js"
       ],
       "run_at": "document_idle",

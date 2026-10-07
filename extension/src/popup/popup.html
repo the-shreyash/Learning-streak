@@ -68,7 +68,7 @@
         </div>
       </section>
 
-      <section class="card course-card">
+      <section class="card course-card" id="courseCard">
         <div class="course-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></svg>
         </div>
@@ -76,6 +76,19 @@
           <div class="eyebrow" id="courseLabel">Current course</div>
           <div class="course-title" id="courseTitle">Udemy Learning</div>
         </div>
+      </section>
+
+      <section class="card learn-card" id="learnCard" hidden>
+        <div class="course-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="M10 9.5v5l4.5-2.5z" fill="currentColor"/></svg>
+        </div>
+        <div class="course-text">
+          <div class="eyebrow"><span id="learnState">Learning</span> · YouTube</div>
+          <div class="course-title" id="learnTitle"></div>
+          <div class="learn-metrics num" id="learnMetrics"><span>Content <b id="learnContent">0m 00s</b></span><span>Actual <b id="learnActual">0m 00s</b></span></div>
+          <div class="learn-hint" id="learnHint" hidden></div>
+        </div>
+        <button class="btn learn-lib" id="openLibrary" title="Open the Learning Library">Library</button>
       </section>
 
       <section class="card stats">

@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/unit/*.test.mjs",
+    "test:v1": "node --test $(ls tests/unit/*.test.mjs | grep -v '/v2\\.')",
+    "test:v2": "node --test tests/unit/v2.*.test.mjs",
     "test:e2e": "node tests/e2e/run-e2e.mjs",
     "test:debug": "node tests/e2e/debug-tools.mjs",
     "check": "node scripts/check.mjs",
@@ -14,7 +16,8 @@
     "screenshots": "node scripts/screenshots.mjs screenshots",
     "test:speed": "node tests/e2e/run-speed.mjs",
     "test:background": "node tests/e2e/run-background.mjs",
-    "test:upgrade": "node tests/e2e/upgrade.mjs"
+    "test:upgrade": "node tests/e2e/upgrade.mjs",
+    "test:youtube": "node tests/e2e/run-youtube.mjs"
   },
   "engines": {
     "node": ">=18"

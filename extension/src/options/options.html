@@ -48,6 +48,40 @@
       </div>
     </section>
 
+    <!-- Learning Library (V2.1) -->
+    <section class="card section" id="library">
+      <div class="section-head">
+        <h2>Learning Library</h2>
+        <p>YouTube counts <b>only</b> for videos you add here. Any other YouTube video — music, entertainment, anything you didn't add — is never counted.</p>
+      </div>
+      <div class="lib-actions">
+        <button class="btn btn-primary" id="libAddOpen">+ Add YouTube Content</button>
+      </div>
+      <form class="lib-form" id="libForm" hidden novalidate>
+        <label class="field lib-field" for="libUrl">
+          <span>YouTube video URL</span>
+          <span class="input-wrap"><input id="libUrl" type="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" spellcheck="false"></span>
+        </label>
+        <div class="field-row">
+          <label class="field lib-field" for="libTitle">
+            <span>Title <i>(optional — defaults to the video's title)</i></span>
+            <span class="input-wrap"><input id="libTitle" maxlength="200" autocomplete="off"></span>
+          </label>
+          <label class="field lib-field" for="libSubject">
+            <span>Subject <i>(optional)</i></span>
+            <span class="input-wrap"><input id="libSubject" maxlength="200" autocomplete="off" placeholder="e.g. Machine Learning"></span>
+          </label>
+        </div>
+        <p class="lib-error" id="libError" role="alert" hidden></p>
+        <div class="ip-buttons">
+          <button class="btn" type="button" id="libCancel">Cancel</button>
+          <button class="btn btn-primary" type="submit" id="libAdd">Add video</button>
+        </div>
+        <p class="hint">Single videos only. Playlists aren't supported yet — a link with <code>&amp;list=…</code> adds just that one video.</p>
+      </form>
+      <ul class="lib-list" id="libList"></ul>
+    </section>
+
     <!-- Notifications -->
     <section class="card section">
       <div class="section-head">

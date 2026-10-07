@@ -9,6 +9,11 @@ import { computeStats } from './statisticsEngine.js';
 import { normalizeSettings, clampGoalMinutes, goalSecondsOf, createDefaultState } from './schema.js';
 import { sanitizeCourse } from './timerEngine.js';
 import { learningSecondsOf, normalizeDayRecord, normalizeCourse, courseLearningSecondsOf } from './records.js';
+import { normalizePlatformTotals } from './dailyAggregation.js';
+import { normalizeSessions } from './learningSession.js';
+import { isKnownPlatform } from '../platforms/registry.js';
+import { MAX_SESSIONS } from './learningEngine.js';
+import { normalizeLibrary, mergeLibraries } from './learningLibrary.js';
 
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 const MAX_DAYS = 20_000; // ~55 years
@@ -35,6 +40,9 @@ export function buildExport(state, todayKey, nowMs = Date.now()) {
     settings: { ...state.settings },
     dailyHistory: state.dailyHistory,
     courses: state.courses,
+    // V2.1 (optional; ignored by V1.2.1 importers)
+    sessions: state.sessions || {},
+    library: state.library || {},
   };
 }
 
@@ -69,6 +77,8 @@ export function validateImport(input) {
   }
   if (obj.settings !== undefined && !isPlainObject(obj.settings)) errors.push('"settings" must be an object.');
   if (obj.courses !== undefined && !isPlainObject(obj.courses)) errors.push('"courses" must be an object.');
+  if (obj.sessions !== undefined && !isPlainObject(obj.sessions)) errors.push('"sessions" must be an object.');
+  if (obj.library !== undefined && !isPlainObject(obj.library)) errors.push('"library" must be an object.');
   if (obj.longestStreak !== undefined && (!Number.isInteger(obj.longestStreak) || obj.longestStreak < 0)) {
     errors.push('"longestStreak" must be a non-negative integer.');
   }
@@ -100,6 +110,8 @@ export function validateImport(input) {
     const picked = { goalSeconds: goal, completed: rec.completed === true };
     for (const [f] of present) picked[f] = rec[f];
     const clean = normalizeDayRecord(picked, fallbackGoalSeconds);
+    const platforms = normalizePlatformTotals(rec.platforms);
+    if (platforms) clean.platforms = platforms;
     if (isNum(rec.completedAt)) clean.completedAt = rec.completedAt;
     if (rec.celebrationShown === true || clean.completed) clean.celebrationShown = true; // never re-celebrate imported days
     dailyHistory[key] = clean;
@@ -121,8 +133,15 @@ export function validateImport(input) {
     if (!clean || !valid) { warnings.push(`Skipped invalid course "${String(key).slice(0, 40)}".`); continue; }
     const picked = { title: clean.title, lastWatchedAt: isNum(c.lastWatchedAt) ? c.lastWatchedAt : 0 };
     for (const f of nums) picked[f] = c[f];
+    if (isKnownPlatform(c.platform)) picked.platform = c.platform;
     courses[clean.key] = normalizeCourse(picked);
   }
+
+  const { sessions, dropped } = normalizeSessions(obj.sessions);
+  if (dropped) warnings.push(`Skipped ${dropped} invalid learning session(s).`);
+  if (Object.keys(sessions).length > MAX_SESSIONS) warnings.push('Too many learning sessions; only the most recent are kept.');
+  const { library, dropped: droppedItems } = normalizeLibrary(obj.library);
+  if (droppedItems) warnings.push(`Skipped ${droppedItems} invalid Learning Library item(s).`);
 
   const days = Object.keys(dailyHistory).sort();
   const summary = {
@@ -133,13 +152,23 @@ export function validateImport(input) {
     totalSeconds: days.reduce((a, k) => a + learningSecondsOf(dailyHistory[k]), 0),
     legacyDays: days.filter((k) => dailyHistory[k].legacySeconds > 0).length,
     courses: Object.keys(courses).length,
+    sessions: Object.keys(sessions).length,
+    libraryItems: Object.keys(library).length,
   };
   return {
     ok: true,
     warnings,
     summary,
-    data: { settings, dailyHistory, courses, longestStreak: Number.isInteger(obj.longestStreak) ? obj.longestStreak : 0 },
+    data: { settings, dailyHistory, courses, sessions: keepRecentSessions(sessions), library: obj.library !== undefined ? library : null, longestStreak: Number.isInteger(obj.longestStreak) ? obj.longestStreak : 0 },
   };
+}
+
+function keepRecentSessions(sessions) {
+  const ids = Object.keys(sessions);
+  if (ids.length <= MAX_SESSIONS) return sessions;
+  const kept = {};
+  for (const id of ids.sort((a, b) => sessions[b].endedAt - sessions[a].endedAt).slice(0, MAX_SESSIONS)) kept[id] = sessions[id];
+  return kept;
 }
 
 /**
@@ -156,6 +185,9 @@ export function applyImport(currentState, data, mode = 'merge', todayKey, nowMs 
       settings: { ...data.settings },
       dailyHistory: { ...data.dailyHistory },
       courses: { ...data.courses },
+      sessions: { ...(data.sessions || {}) },
+      // A file without a library (V1.2.1, or V2.1 before Phase B) leaves the current library alone.
+      library: data.library ? { ...data.library } : { ...(currentState.library || {}) },
       meta: { ...fresh.meta, installedAt: currentState.meta?.installedAt || nowMs, longestStreak: data.longestStreak || 0 },
     };
   } else {
@@ -172,10 +204,14 @@ export function applyImport(currentState, data, mode = 'merge', todayKey, nowMs 
     for (const [key, c] of Object.entries(data.courses)) {
       if (!courses[key] || courseLearningSecondsOf(c) > courseLearningSecondsOf(courses[key])) courses[key] = { ...c };
     }
+    // Sessions merge by id: re-importing the same file never duplicates a session.
+    const sessions = keepRecentSessions({ ...(data.sessions || {}), ...(currentState.sessions || {}) });
     next = {
       ...currentState,
       dailyHistory,
       courses,
+      sessions,
+      library: mergeLibraries(currentState.library, data.library),
       meta: { ...currentState.meta, longestStreak: Math.max(Number(currentState.meta?.longestStreak) || 0, data.longestStreak || 0) },
     };
   }

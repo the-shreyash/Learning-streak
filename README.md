@@ -94,6 +94,22 @@ Credit is saved to storage at least every **5 seconds**, and right away when tra
 
 ---
 
+## YouTube — opt-in Learning Library (V2.1, in development)
+
+YouTube never counts by itself. A YouTube video counts **only** if you added it to your **Learning Library** (Settings → Learning Library → *+ Add YouTube Content*) and it's **enabled**. Nothing else is used to decide: no AI, titles, channels, categories or keywords.
+
+- **Adding**: paste a video link. `youtube.com/watch?v=…` (also `m.`, or no `www.`), `youtu.be/…`, `/embed/…` and `/live/…` work, and extra parameters like `&t=`, `&si=` and `&list=` are ignored. The video ID (11 characters) is the identity, so the same video can't be added twice under another link form. Links that can't be parsed reliably are refused, and so are playlists, Shorts and other sites. Title and subject are optional. You can enable, disable or delete each entry; time you already learned stays when you delete one.
+- **Counting**: the same measurement as Udemy (V1.2.1): genuine forward video progress, speed-aware content plus real "actual" time. It keeps counting in a background tab or while another app is in front. Pause, end, seeking, stalls, ads, screen lock and sleep don't count.
+- **Unregistered videos**: the YouTube tab doesn't even send time for them. The background worker also rejects any YouTube credit whose video isn't an enabled Library item. That check runs against the same state it writes, so a stale tab can't sneak time in.
+- **Switching videos inside YouTube (SPA)**: identity is the URL's `v=`, checked on every measurement and on every `timeupdate`. A measurement interval during which the ID changed is dropped. YouTube reuses one `<video>` and swaps its source *after* changing the URL, so each media source is tied to the video ID the URL showed when it loaded. Time only counts while the element plays a source loaded for the current ID.
+- **Popup**: on a registered video it shows *Learning · YouTube*, the title, and the session's Content / Actual. On any other video it shows *Not registered as learning*.
+
+**Playlists are not supported yet (deferred to Phase C).** Here's what the page itself shows (checked on youtube.com on 2026-10-07):
+- `&list=` in the URL proves nothing. YouTube shows a playlist's panel, "1 / 10" included, next to *any* video given that `list=`.
+- The playlist panel (`ytd-playlist-panel-video-renderer`) does list the playlist's video IDs locally. That was complete for 10- and 47-video playlists, but it's undocumented DOM and wasn't checked for very long playlists, which YouTube may load in pieces.
+
+Proving "this video belongs to playlist X" without the YouTube Data API, an API key or a network request would therefore rest on that DOM alone, so it isn't done.
+
 ## Project structure
 
 ```
@@ -155,7 +171,8 @@ Course totals are converted the same way. The calendar tooltip marks those days 
 
 | Permission | Why |
 |---|---|
-| `host_permissions: https://*.udemy.com/*` | run the tracker on Udemy only (incl. Udemy Business subdomains) |
+| `host_permissions: https://*.udemy.com/*` | run the tracker on Udemy (incl. Udemy Business subdomains) |
+| `host_permissions: https://www.youtube.com/*` | V2.1: run the tracker on YouTube watch pages; it counts only videos in your Learning Library |
 | `storage` | save your stats locally |
 | `alarms` | daily reminder + midnight badge refresh |
 | `notifications` | goal-complete / reminder notifications (can be turned off) |
@@ -179,7 +196,12 @@ npm run test:speed  # V1.1 browser test on a 60-min video: 2× 5 min, 1.5×, 1×
                     #   SPEED_SCALE=0.2 npm run test:speed runs the same scenarios 5× shorter
 npm run test:background  # V1.2 browser test: background tab, other app, background pause/end/2×/seek/lecture switch, lock (~12 min)
 npm run test:debug  # verifies the simulation panel on a temporary DEBUG copy
+npm run test:v1     # the V1 unit tests only
+npm run test:v2     # the V2.1 unit tests only (incl. YouTube playback through the real content scripts, tests/unit/contentHarness.mjs)
+npm run test:youtube     # V2.1 browser test against a MOCKED www.youtube.com fixture (tests/e2e/mockYouTube.mjs) + mock Udemy
 ```
+
+The YouTube browser test never touches the real site. Real-site behaviour has to be checked by hand: the extension loaded unpacked, an added video, a different unregistered video, SPA clicks between them, background tab and another app.
 
 The E2E test plays a real video in a real browser and checks:
 

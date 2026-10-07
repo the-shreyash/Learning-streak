@@ -80,6 +80,26 @@ code { font-family: var(--mono); font-size: 12px; background: var(--surface-3); 
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.error { background: var(--danger); color: #fff; }
 
+/* Learning Library */
+.lib-form[hidden], .lib-error[hidden], #libAddOpen[hidden] { display: none; }
+.lib-actions { display: flex; gap: 8px; }
+.lib-form { display: flex; flex-direction: column; gap: 12px; border: 1px dashed var(--border-strong); border-radius: var(--radius); padding: 14px; background: var(--surface-2); }
+.lib-field { flex: 1; min-width: 200px; }
+.lib-field i { font-style: normal; font-weight: 500; color: var(--text-3); }
+.lib-field .input-wrap input { width: 100%; }
+.lib-error { margin: 0; color: var(--danger); font-size: 13px; font-weight: 600; }
+.lib-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.lib-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+.lib-item:first-child { border-top: 0; }
+.lib-text { display: flex; flex-direction: column; gap: 2px; margin-right: auto; min-width: 0; }
+.lib-text b { font-weight: 650; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lib-meta { color: var(--text-3); font-size: 12.5px; }
+.lib-item[data-enabled="false"] .lib-text b { color: var(--text-3); }
+.lib-state { font-size: 12px; font-weight: 650; color: var(--success); min-width: 58px; text-align: right; }
+.lib-item[data-enabled="false"] .lib-state { color: var(--text-3); }
+.lib-del { height: 30px; padding: 0 10px; font-size: 12.5px; }
+.lib-empty { color: var(--text-3); font-size: 13px; padding: 4px 0; }
+
 @media (max-width: 520px) {
   .page { padding-top: 24px; }
   .head-stat { display: none; }

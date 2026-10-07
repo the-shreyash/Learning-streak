@@ -6,8 +6,10 @@
  *  - Reject credit while the screen is locked (chrome.idle).
  *  - Goal-complete notifications, daily reminder, badge.
  *  - Settings / import / reset requests from the popup & options pages.
- *  - Re-inject the tracker into already-open Udemy tabs after install/update so
- *    tracking continues without reloading the page.
+ *  - Re-inject the tracker into already-open Udemy / YouTube tabs after
+ *    install/update so tracking continues without reloading the page.
+ *  - V2.1: the Learning Library (registered YouTube videos) — lookups from tabs,
+ *    add / enable / disable / delete from extension pages.
  *
  * All listeners are registered synchronously at top level, as MV3 requires.
  */
@@ -15,7 +17,10 @@
 import { DEBUG_TOOLS } from '../config/config.js';
 import { createStorageService } from '../storage/storageService.js';
 import { createDefaultState, normalizeSettings } from '../core/schema.js';
-import { applyCredit, applyGoalChange, addSecondsToDay, markCelebrationShown } from '../core/timerEngine.js';
+import { applyGoalChange, addSecondsToDay, markCelebrationShown } from '../core/timerEngine.js';
+import { recordCredit } from '../core/learningEngine.js';
+import { addYouTubeVideo, setLibraryItemEnabled, removeLibraryItem, targetStatus } from '../core/learningLibrary.js';
+import { sourceFromLegacyCourse } from '../platforms/udemy.js';
 import { validateImport, applyImport } from '../core/dataTransfer.js';
 import { effectiveOffset, todayKeyFor } from '../core/clock.js';
 import { addDays, toDayKey } from '../core/dateUtils.js';
@@ -26,6 +31,8 @@ import { syncReminderAlarm, scheduleMidnight, handleReminder, REMINDER_ALARM, MI
 
 const storage = createStorageService();
 const UDEMY_TAB_PATTERN = 'https://*.udemy.com/*';
+const YOUTUBE_TAB_PATTERN = 'https://www.youtube.com/*';
+const TRACKED_TAB_PATTERNS = [UDEMY_TAB_PATTERN, YOUTUBE_TAB_PATTERN];
 
 // ---------------------------------------------------------------------------
 // Screen lock detection
@@ -39,9 +46,9 @@ async function isLocked() {
   return lockedCache;
 }
 
-async function broadcastToUdemyTabs(message) {
+async function broadcastToTabs(message, url = TRACKED_TAB_PATTERNS) {
   try {
-    const tabs = await chrome.tabs.query({ url: UDEMY_TAB_PATTERN });
+    const tabs = await chrome.tabs.query({ url });
     await Promise.all(tabs.map((t) => chrome.tabs.sendMessage(t.id, message).catch(() => {})));
   } catch { /* no tabs */ }
 }
@@ -49,7 +56,7 @@ async function broadcastToUdemyTabs(message) {
 chrome.idle.setDetectionInterval(60);
 chrome.idle.onStateChanged.addListener((state) => {
   lockedCache = state === 'locked';
-  broadcastToUdemyTabs({ type: 'system:lock', locked: lockedCache });
+  broadcastToTabs({ type: 'system:lock', locked: lockedCache });
 });
 
 // ---------------------------------------------------------------------------
@@ -73,13 +80,18 @@ async function onCredit(msg, sender) {
     await setTabStatus(sender.tab.id, false);
     return { ok: false, locked: true, rejected: 'locked' };
   }
+  // V2.1: every credit goes through the Learning Engine. A V1-shaped credit (no
+  // `source`) comes from the Udemy content script and is mapped by the Udemy adapter.
+  // recordCredit() rejects YouTube time unless the video is an ENABLED Library item.
+  const source = msg.source !== undefined ? msg.source : sourceFromLegacyCourse(msg.course);
   const result = await storage.update((state) =>
-    applyCredit(state, { endMs: msg.endMs, active: msg.active, content: msg.content, seconds: msg.seconds, course: msg.course }, { clockOffsetMs: effectiveOffset(state) }));
+    recordCredit(state, { endMs: msg.endMs, active: msg.active, content: msg.content, seconds: msg.seconds, source }, { clockOffsetMs: effectiveOffset(state) }));
   let state = result.state;
   if (result.completedDays?.length) state = await handleCompletedDays(state, result.completedDays);
-  if (typeof msg.counting === 'boolean') await setTabStatus(sender.tab.id, msg.counting);
+  const unauthorized = result.targetStatus !== undefined && result.targetStatus !== 'registered';
+  if (typeof msg.counting === 'boolean') await setTabStatus(sender.tab.id, msg.counting && !unauthorized);
   await refreshBadge(state);
-  return { ok: true, applied: result.appliedSeconds, appliedContent: result.appliedContent, rejected: result.rejected, locked: false };
+  return { ok: true, applied: result.appliedSeconds, appliedContent: result.appliedContent, rejected: result.rejected, targetStatus: result.targetStatus, locked: false };
 }
 
 async function onStatus(msg, sender) {
@@ -89,6 +101,34 @@ async function onStatus(msg, sender) {
   await refreshBadge(await storage.read());
   return { ok: true, locked };
 }
+
+// ---- Learning Library --------------------------------------------------------
+const fromExtensionPage = (sender) => typeof sender.url === 'string' && sender.url.startsWith(chrome.runtime.getURL(''));
+
+/** Is this target registered? Asked by the YouTube content script (read-only). */
+async function onLibraryLookup(msg, sender) {
+  if (!sender.tab) return { ok: false, error: 'lookup must come from a tab' };
+  const state = await storage.read();
+  const { status, item } = targetStatus(state.library, msg.platform, msg.contentType, msg.targetId);
+  return { ok: true, status, title: item?.title || null, subject: item?.subject || null };
+}
+
+/** Apply a pure library mutation, then tell open YouTube tabs to re-check. */
+async function mutateLibrary(sender, fn) {
+  if (!fromExtensionPage(sender)) return { ok: false, error: 'library changes must come from the extension' };
+  let outcome;
+  await storage.update((state) => {
+    outcome = fn(state.library || {});
+    return outcome.ok ? { state: { ...state, library: outcome.library } } : undefined;
+  });
+  if (!outcome.ok) return { ok: false, code: outcome.code, error: outcome.error };
+  await broadcastToTabs({ type: 'library:changed' }, YOUTUBE_TAB_PATTERN);
+  return { ok: true, item: outcome.item, playlistIgnored: outcome.playlistIgnored };
+}
+
+const onLibraryAdd = (msg, sender) => mutateLibrary(sender, (lib) => addYouTubeVideo(lib, { url: msg.url, title: msg.title, subject: msg.subject }));
+const onLibrarySetEnabled = (msg, sender) => mutateLibrary(sender, (lib) => setLibraryItemEnabled(lib, msg.id, msg.enabled));
+const onLibraryRemove = (msg, sender) => mutateLibrary(sender, (lib) => removeLibraryItem(lib, msg.id));
 
 async function onSettingsUpdate(msg) {
   const result = await storage.update((state) => {
@@ -123,6 +163,7 @@ async function onReset() {
   const current = await storage.read();
   const fresh = createDefaultState();
   fresh.settings = { ...current.settings }; // "Reset statistics" keeps preferences
+  fresh.library = { ...(current.library || {}) }; // …and the Learning Library (configuration, not statistics)
   await storage.reset(fresh);
   await refreshBadge(fresh);
   return { ok: true };
@@ -194,6 +235,10 @@ const HANDLERS = {
   'data:reset': onReset,
   'ui:ackCelebration': onAckCelebration,
   'debug:action': onDebug,
+  'library:lookup': onLibraryLookup,
+  'library:add': onLibraryAdd,
+  'library:setEnabled': onLibrarySetEnabled,
+  'library:remove': onLibraryRemove,
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -210,14 +255,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
-async function injectIntoOpenUdemyTabs() {
-  const files = chrome.runtime.getManifest().content_scripts?.[0]?.js || [];
-  if (!files.length) return;
-  let tabs = [];
-  try { tabs = await chrome.tabs.query({ url: UDEMY_TAB_PATTERN }); } catch { return; }
-  for (const tab of tabs) {
-    if (tab.discarded || tab.id === undefined) continue;
-    chrome.scripting.executeScript({ target: { tabId: tab.id }, files }).catch(() => {});
+async function injectIntoOpenTabs() {
+  for (const cs of chrome.runtime.getManifest().content_scripts || []) {
+    const files = cs.js || [];
+    if (!files.length) continue;
+    let tabs = [];
+    try { tabs = await chrome.tabs.query({ url: cs.matches }); } catch { continue; }
+    for (const tab of tabs) {
+      if (tab.discarded || tab.id === undefined) continue;
+      chrome.scripting.executeScript({ target: { tabId: tab.id }, files }).catch(() => {});
+    }
   }
 }
 
@@ -231,7 +278,7 @@ async function boot() {
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   await boot();
-  if (details.reason === 'install' || details.reason === 'update') await injectIntoOpenUdemyTabs();
+  if (details.reason === 'install' || details.reason === 'update') await injectIntoOpenTabs();
 });
 
 chrome.runtime.onStartup.addListener(() => { boot(); });

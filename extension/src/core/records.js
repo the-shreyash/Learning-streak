@@ -56,6 +56,8 @@ export function normalizeCourse(c) {
     out.actualActiveSeconds += num(c.totalSeconds);
   }
   if (legacy > 0) out.legacySeconds = legacy;
+  // V2: non-Udemy course totals record their platform. V1 records have none (= Udemy).
+  if (typeof c?.platform === 'string' && c.platform) out.platform = c.platform;
   return out;
 }
 

@@ -163,3 +163,15 @@ body { width: 360px; min-height: 200px; }
   0% { opacity: 1; transform: translate(0, 0) scale(1); }
   100% { opacity: 0; transform: translate(var(--x), var(--y)) scale(.3); }
 }
+
+/* ---------- V2.1 learning status (YouTube) ---------- */
+.course-card[hidden], .learn-card[hidden], .learn-metrics[hidden], .learn-hint[hidden] { display: none; }
+.learn-card { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
+.learn-card .course-text { flex: 1; }
+.learn-card[data-state="learning"] .course-icon { background: var(--accent); color: #1b0d02; }
+.learn-card[data-state="unregistered"] .course-icon { background: var(--surface-3); color: var(--text-3); }
+.learn-card[data-state="learning"] #learnState { color: var(--accent); }
+.learn-metrics { display: flex; gap: 12px; margin-top: 3px; font-size: 12px; color: var(--text-2); }
+.learn-metrics b { color: var(--text); font-weight: 650; }
+.learn-hint { margin-top: 3px; font-size: 12px; color: var(--text-3); }
+.learn-lib { flex: none; height: 28px; padding: 0 10px; font-size: 12px; }

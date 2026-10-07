@@ -1,10 +1,11 @@
-/** Popup controller: reads state, polls Udemy tabs (incl. background ones) for live status. */
+/** Popup controller: reads state, polls Udemy / YouTube tabs (incl. background ones) for live status. */
 import { readState, onStateChange, sendToBackground } from '../shared/stateClient.js';
 import { todayKeyFor } from '../core/clock.js';
 import { learningSecondsOf, activeSecondsOf } from '../core/records.js';
 import { renderDashboard } from './dashboard.js';
 import { createCalendar } from './calendar.js';
 import { showCelebration } from './celebration.js';
+import { renderLearningStatus } from './learningStatus.js';
 import '../content/activityRules.js'; // provides REASON_TEXT on globalThis.__UdemyStreak
 
 const REASON_TEXT = globalThis.__UdemyStreak?.REASON_TEXT || {};
@@ -17,8 +18,15 @@ const SHORT_REASON = {
   'locked': 'Screen locked',
   'no-video': 'No video found',
   'not-learn-page': 'Not on a lecture',
+  // V2.1 (YouTube)
+  'not-registered': 'Not registered',
+  'disabled': 'Disabled',
+  'checking': 'Checking…',
+  'loading': 'Loading',
+  'ad': 'Ad playing',
 };
-const UDEMY_URL_RE = /^https:\/\/([a-z0-9-]+\.)*udemy\.com\//i;
+const TRACKED_URL_RE = /^https:\/\/(([a-z0-9-]+\.)*udemy\.com|www\.youtube\.com)\//i;
+const TRACKED_TAB_PATTERNS = ['https://*.udemy.com/*', 'https://www.youtube.com/*'];
 
 const $ = (id) => document.getElementById(id);
 let state = null;
@@ -58,6 +66,7 @@ function renderStatus() {
     text = SHORT_REASON[live.reason] || 'Paused';
     title = REASON_TEXT[live.reason] || '';
     if (!live.onLearnPage) mode = 'idle';
+    if (live.platform === 'youtube' && !live.onLearnPage) { text = 'Not on a video'; title = 'Open a YouTube video from your Learning Library to start tracking'; }
   }
   chip.dataset.state = mode;
   $('statusText').textContent = text;
@@ -79,6 +88,7 @@ function render() {
   renderStatus();
   if (view === 'dashboard') {
     const info = renderDashboard(state, todayKey(), todayLive(), live);
+    $('courseCard').hidden = renderLearningStatus(state, live);
     maybeCelebrate(info);
   } else {
     calendar.render();
@@ -96,16 +106,17 @@ function setView(next) {
 const pingTab = (tab) => chrome.tabs.sendMessage(tab.id, { type: 'popup:ping' }).catch(() => null); // no tracker in that tab
 
 /**
- * Live status from the most relevant Udemy tab. Since V1.2 a lecture keeps
+ * Live status from the most relevant tracked tab. Since V1.2 a lecture keeps
  * counting in a background tab, so look beyond the active tab: the active tab
- * if it's Udemy, else any Udemy tab that is counting, else one on a lecture.
+ * if it's Udemy / YouTube, else any tracked tab that is counting, else one on a
+ * lecture / video.
  */
-async function pingUdemyTabs() {
+async function pingTrackedTabs() {
   try {
     const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const activeLive = active?.id && UDEMY_URL_RE.test(active.url || '') ? await pingTab(active) : null;
+    const activeLive = active?.id && TRACKED_URL_RE.test(active.url || '') ? await pingTab(active) : null;
     if (activeLive?.counting) { live = activeLive; return; }
-    const others = (await chrome.tabs.query({ url: 'https://*.udemy.com/*' })).filter((t) => t.id !== active?.id && !t.discarded);
+    const others = (await chrome.tabs.query({ url: TRACKED_TAB_PATTERNS })).filter((t) => t.id !== active?.id && !t.discarded);
     const lives = (await Promise.all(others.map(pingTab))).filter(Boolean);
     live = lives.find((l) => l.counting) || activeLive || lives.find((l) => l.onLearnPage) || null;
   } catch {
@@ -121,6 +132,7 @@ async function reload() {
 async function init() {
   $('openSettings').addEventListener('click', () => chrome.runtime.openOptionsPage());
   $('openCalendar').addEventListener('click', () => setView('calendar'));
+  $('openLibrary').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('src/options/options.html#library') }));
   $('calBack').addEventListener('click', () => setView('dashboard'));
   $('calPrev').addEventListener('click', () => calendar.step(-1));
   $('calNext').addEventListener('click', () => calendar.step(1));
@@ -131,10 +143,10 @@ async function init() {
     if (view === 'calendar' && e.key === 'ArrowRight') calendar.step(1);
   });
 
-  await Promise.all([reload(), pingUdemyTabs()]);
+  await Promise.all([reload(), pingTrackedTabs()]);
   render();
   onStateChange(reload);
-  setInterval(async () => { await pingUdemyTabs(); render(); }, 1000);
+  setInterval(async () => { await pingTrackedTabs(); render(); }, 1000);
 }
 
 init();

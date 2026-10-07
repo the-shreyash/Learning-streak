@@ -11,6 +11,9 @@ import { SCHEMA_VERSION } from '../config/config.js';
 import { createDefaultState, normalizeSettings, goalSecondsOf } from '../core/schema.js';
 import { isValidDayKey } from '../core/dateUtils.js';
 import { normalizeDayRecord, normalizeCourse } from '../core/records.js';
+import { normalizeSessions } from '../core/learningSession.js';
+import { normalizePlatformTotals } from '../core/dailyAggregation.js';
+import { normalizeLibrary } from '../core/learningLibrary.js';
 
 const MIGRATIONS = {
   // 0 → 1: pre-release / empty storage. Nothing to transform beyond defaults.
@@ -24,6 +27,13 @@ const MIGRATIONS = {
   //   below (idempotent), so nothing extra is needed here.
   1: (s) => s,
 };
+
+// V2.1 Learning Engine data is additive and does NOT bump SCHEMA_VERSION (the
+// format stays readable by V1.2.1). It is normalized on every migrate() call,
+// which is idempotent: a missing `sessions` map is created empty — no sessions,
+// platforms or subjects are invented for V1 history — and malformed V2 entries
+// are dropped. The same holds for the Learning Library (`library`, created empty:
+// no YouTube content is ever registered on the user's behalf).
 
 function isObj(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
 
@@ -47,6 +57,11 @@ export function migrate(raw, nowMs = Date.now()) {
     if (!isValidDayKey(key) || !isObj(rec)) { changed = true; continue; }
     const norm = normalizeDayRecord(rec, fallbackGoal);
     if (rec.watchedSeconds !== undefined) changed = true;
+    if (rec.platforms !== undefined) {
+      const platforms = normalizePlatformTotals(rec.platforms);
+      if (platforms) norm.platforms = platforms; else delete norm.platforms;
+      if (JSON.stringify(platforms ?? undefined) !== JSON.stringify(rec.platforms)) changed = true;
+    }
     dailyHistory[key] = norm;
   }
   const courses = {};
@@ -55,6 +70,12 @@ export function migrate(raw, nowMs = Date.now()) {
     if (c.totalSeconds !== undefined) changed = true;
     courses[key] = normalizeCourse(c);
   }
+  if (!isObj(state.sessions)) changed = true;
+  const { sessions, dropped } = normalizeSessions(state.sessions);
+  if (dropped) changed = true;
+  if (!isObj(state.library)) changed = true;
+  const { library, dropped: droppedItems } = normalizeLibrary(state.library);
+  if (droppedItems || (isObj(state.library) && JSON.stringify(library) !== JSON.stringify(state.library))) changed = true;
 
   return {
     changed,
@@ -64,6 +85,8 @@ export function migrate(raw, nowMs = Date.now()) {
       settings,
       dailyHistory,
       courses,
+      sessions,
+      library,
       meta: { ...defaults.meta, ...(isObj(state.meta) ? state.meta : {}) },
       debug: { ...defaults.debug, ...(isObj(state.debug) ? state.debug : {}) },
     },

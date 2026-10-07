@@ -10,7 +10,15 @@
  *                                    completed, completedAt?, celebrationShown? } },
  *   courses: { [courseSlug]: { title, contentSeconds, actualActiveSeconds, legacySeconds?, lastWatchedAt } },
  *   (see core/records.js for field meanings)
- *   meta: { longestStreak, currentCourse, installedAt, creditedUntil, lastGoalNotifiedDay },
+ *   meta: { longestStreak, currentCourse, installedAt, creditedUntil, lastGoalNotifiedDay, activeSessionId },
+ *
+ *   V2.1 (additive — schemaVersion stays 2, so V1.2.1 can still read/import the data):
+ *   dailyHistory[day].platforms?: { [platformId]: { contentSeconds, actualActiveSeconds } }
+ *       per-platform attribution of the day's totals (core/dailyAggregation.js)
+ *   courses[key].platform?: set for non-Udemy courses (key "youtube:<type>:<id>")
+ *   sessions: { [id]: LearningSession }   (core/learningSession.js)
+ *   library: { [id]: LibraryItem }        (core/learningLibrary.js) — user-registered
+ *       learning content (YouTube videos). Configuration, not statistics: kept on reset.
  *   debug: { clockOffsetMs }      // only honoured when DEBUG_TOOLS is true
  * }
  */
@@ -32,12 +40,15 @@ export function createDefaultState(nowMs = Date.now()) {
     settings: { ...DEFAULT_SETTINGS },
     dailyHistory: {},
     courses: {},
+    sessions: {},
+    library: {},
     meta: {
       longestStreak: 0,
       currentCourse: null,
       installedAt: nowMs,
       creditedUntil: 0,
       lastGoalNotifiedDay: null,
+      activeSessionId: null,
     },
     debug: { clockOffsetMs: 0 },
   };

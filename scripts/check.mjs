@@ -35,9 +35,11 @@ const ALLOWED_PERMS = new Set(['storage', 'alarms', 'notifications', 'idle', 'sc
 const extraPerms = (manifest.permissions || []).filter((p) => !ALLOWED_PERMS.has(p));
 extraPerms.length ? fail(`unexpected permissions: ${extraPerms}`) : ok(`permissions limited to: ${manifest.permissions.join(', ')}`);
 const hosts = manifest.host_permissions || [];
-hosts.every((h) => /^https:\/\/\*\.udemy\.com\/\*$/.test(h)) ? ok(`host access limited to: ${hosts.join(', ')}`) : fail(`host permissions too broad: ${hosts}`);
+// V2.1: YouTube is opt-in (Learning Library), and only www.youtube.com is needed.
+const HOST_RE = /^https:\/\/(\*\.udemy\.com|www\.youtube\.com)\/\*$/;
+hosts.every((h) => HOST_RE.test(h)) ? ok(`host access limited to: ${hosts.join(', ')}`) : fail(`host permissions too broad: ${hosts}`);
 JSON.stringify(manifest).includes('<all_urls>') ? fail('<all_urls> present') : ok('no <all_urls>');
-(manifest.content_scripts || []).every((cs) => cs.matches.every((m) => m.includes('udemy.com'))) ? ok('content scripts match Udemy only') : fail('content script matches non-Udemy URLs');
+(manifest.content_scripts || []).every((cs) => cs.matches.every((m) => HOST_RE.test(m))) ? ok('content scripts match Udemy / www.youtube.com only') : fail('content script matches other URLs');
 manifest.web_accessible_resources ? fail('web_accessible_resources should not be needed') : ok('no web-accessible resources exposed to pages');
 manifest.externally_connectable ? fail('externally_connectable should be absent') : ok('not externally connectable');
 
@@ -73,8 +75,8 @@ const netHits = jsFiles.filter((f) => NET.test(readFileSync(f, 'utf8')));
 netHits.length ? fail(`network APIs used in: ${netHits.map((f) => path.relative(root, f))}`) : ok('no network requests in extension code');
 const URL_RE = /https?:\/\/[^\s'"`)<>]+/g;
 const urls = new Set(files.filter((f) => /\.(js|html|css)$/.test(f)).flatMap((f) => readFileSync(f, 'utf8').match(URL_RE) || []));
-const foreign = [...urls].filter((u) => !/^https:\/\/(\*\.|www\.)?udemy\.com/.test(u) && !u.startsWith('http://www.w3.org/'));
-foreign.length ? fail(`external URLs referenced: ${foreign}`) : ok('no external URLs (only udemy.com / SVG namespace)');
+const foreign = [...urls].filter((u) => !/^https:\/\/(\*\.|www\.)?udemy\.com/.test(u) && !/^https:\/\/www\.youtube\.com\//.test(u) && !u.startsWith('http://www.w3.org/'));
+foreign.length ? fail(`external URLs referenced: ${foreign}`) : ok('no external URLs (only udemy.com / www.youtube.com / SVG namespace)');
 const contentSrc = jsFiles.filter((f) => f.includes(`${path.sep}content${path.sep}`)).map((f) => readFileSync(f, 'utf8')).join('\n');
 /\.(play|pause)\s*\(\s*\)|currentTime\s*=|playbackRate\s*=|dispatchEvent\(new (Mouse|Keyboard|Pointer)Event|\.click\(\)/.test(contentSrc)
   ? fail('content script appears to control playback or simulate input')
