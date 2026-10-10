@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchChrome } from '../tests/e2e/cdp.mjs';
+import { launchChrome, resolveChromeExecutable } from '../tests/e2e/cdp.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.resolve(process.argv[2] || path.join(root, 'screenshots'));
@@ -14,7 +14,7 @@ mkdirSync(out, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'streak-shots-'));
 const { proc, cdp } = await launchChrome({
-  executable: process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  executable: resolveChromeExecutable(),
   userDataDir: tmp, extensionDir: path.join(root, 'extension'), hostRules: 'MAP none 127.0.0.1',
 });
 

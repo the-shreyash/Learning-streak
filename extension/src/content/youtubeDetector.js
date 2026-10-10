@@ -21,11 +21,18 @@
 
   const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
   const PLAYLIST_ID_RE = /^[A-Za-z0-9_-]{2,64}$/;
+  // Playlists that can be registered: user/creator playlists (PL…), a channel's
+  // uploads (UU…, incl. UULF/UUSH) and albums (OLAK5uy_…). Everything else is
+  // generated or personal and changes on its own — a Mix (RD…) is built around
+  // whatever video starts it, so it would "contain" any video; Watch later (WL),
+  // Liked (LL/LM), queues (TL…) and the like follow your clicks, not a course.
+  const REGISTRABLE_PLAYLIST_RE = /^(?:PL[A-Za-z0-9_-]{16,40}|UU[A-Za-z0-9_-]{22,24}|OLAK5uy_[A-Za-z0-9_-]{30,40})$/;
   const WATCH_HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com'];
   const SHORT_HOSTS = ['youtu.be', 'www.youtu.be'];
   const PATH_ID_RE = /^\/(?:embed|live)\/([^/]+)\/?$/;
 
   const validVideoId = (id) => (typeof id === 'string' && VIDEO_ID_RE.test(id) ? id : null);
+  const validPlaylistId = (id) => (typeof id === 'string' && REGISTRABLE_PLAYLIST_RE.test(id) ? id : null);
 
   function toUrl(input) {
     if (typeof input !== 'string') return null;
@@ -77,12 +84,46 @@
     return { ok: true, videoId: id, playlistId: list && PLAYLIST_ID_RE.test(list) ? list : null };
   }
 
+  /**
+   * Parse a pasted YouTube PLAYLIST page URL (youtube.com/playlist?list=…).
+   * A watch URL is never read as a playlist, even with `&list=`: that link names
+   * a video, and registering its playlist must be an explicit choice.
+   * @returns {{ok:true, playlistId:string} | {ok:false, reason:string}}
+   *   reason: 'not-a-url' | 'not-youtube' | 'not-playlist' | 'ambiguous' | 'auto-playlist' | 'no-playlist-id'
+   */
+  function parsePlaylistUrl(input) {
+    const u = toUrl(input);
+    if (!u) return { ok: false, reason: 'not-a-url' };
+    const host = u.hostname.toLowerCase();
+    if (SHORT_HOSTS.includes(host)) return { ok: false, reason: 'not-playlist' }; // youtu.be links are videos
+    if (!WATCH_HOSTS.includes(host)) return { ok: false, reason: 'not-youtube' };
+    if (!/^\/playlist\/?$/.test(u.pathname)) return { ok: false, reason: 'not-playlist' };
+    const lists = u.searchParams.getAll('list');
+    if (u.searchParams.has('v') || lists.some((l) => l !== lists[0])) return { ok: false, reason: 'ambiguous' };
+    if (!lists.length || !PLAYLIST_ID_RE.test(lists[0])) return { ok: false, reason: 'no-playlist-id' };
+    const id = validPlaylistId(lists[0]);
+    return id ? { ok: true, playlistId: id } : { ok: false, reason: 'auto-playlist' };
+  }
+
   /** Video ID of a youtube.com watch page location, else null (home, search, shorts, …). */
   function videoIdFromLocation(loc = root.location) {
     try {
       if (!WATCH_HOSTS.includes(String(loc.hostname).toLowerCase())) return null;
       if (loc.pathname !== '/watch' && loc.pathname !== '/watch/') return null;
       return watchParam(new URL(loc.href));
+    } catch { return null; }
+  }
+
+  /**
+   * The registrable playlist named by a watch page's `list=`, else null.
+   * This is only a CLAIM (YouTube shows any video beside any `list=`); it never
+   * authorizes anything by itself — see youtubePlaylist.js.
+   */
+  function playlistIdFromLocation(loc = root.location) {
+    if (!videoIdFromLocation(loc)) return null;
+    try {
+      const lists = new URL(loc.href).searchParams.getAll('list');
+      return lists.length && lists.every((l) => l === lists[0]) ? validPlaylistId(lists[0]) : null;
     } catch { return null; }
   }
 
@@ -116,6 +157,7 @@
 
   NS.youtubeDetector = {
     VIDEO_ID_RE, parseVideoUrl, videoIdFromLocation, validVideoId,
+    parsePlaylistUrl, playlistIdFromLocation, validPlaylistId,
     mainVideo, adShowing, pageVideoId, pageTitle,
   };
 })(globalThis);

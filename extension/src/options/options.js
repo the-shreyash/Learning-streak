@@ -94,8 +94,9 @@ function renderDebug() {
 // Learning Library
 const TYPE_LABEL = { video: 'Video', playlist: 'Playlist' };
 
-/** The user's title, else the title learned while watching, else the video ID. */
+/** The user's title, else the title learned while watching, else the ID. */
 function libraryTitle(item) {
+  if (item.type === 'playlist') return item.title || `YouTube playlist ${item.targetId}`;
   return item.title || state.courses[`${item.platform}:${item.type}:${item.targetId}`]?.title || `YouTube video ${item.targetId}`;
 }
 
@@ -103,13 +104,13 @@ function renderLibrary() {
   const items = libraryItemsOf(state.library);
   const list = $('libList');
   if (!items.length) {
-    list.replaceChildren(el('li', { class: 'lib-empty', text: 'No learning content yet. Add a YouTube video to start counting it.' }));
+    list.replaceChildren(el('li', { class: 'lib-empty', text: 'No learning content yet. Add a YouTube video or playlist to start counting it.' }));
     return;
   }
   list.replaceChildren(...items.map((item) => {
     const toggle = el('input', { type: 'checkbox', class: 'switch', 'aria-label': `Count ${libraryTitle(item)}`, 'data-lib-toggle': item.id });
     toggle.checked = item.enabled;
-    toggle.addEventListener('change', () => libraryRequest({ type: 'library:setEnabled', id: item.id, enabled: toggle.checked }, toggle.checked ? 'Enabled — this video counts' : 'Disabled — this video no longer counts'));
+    toggle.addEventListener('change', () => libraryRequest({ type: 'library:setEnabled', id: item.id, enabled: toggle.checked }, toggle.checked ? `Enabled — this ${TYPE_LABEL[item.type]?.toLowerCase() || 'item'} counts` : `Disabled — this ${TYPE_LABEL[item.type]?.toLowerCase() || 'item'} no longer counts`));
     const del = el('button', { class: 'btn btn-danger lib-del', text: 'Delete', 'data-lib-delete': item.id });
     del.addEventListener('click', async () => {
       const ok = await confirmDialog({ title: 'Delete from Learning Library?', body: `"${libraryTitle(item)}" will no longer count as learning. Time you already learned stays in your history.`, okLabel: 'Delete' });
@@ -145,12 +146,13 @@ async function submitLibraryForm(e) {
   e.preventDefault();
   const res = await chrome.runtime.sendMessage({ type: 'library:add', url: $('libUrl').value, title: $('libTitle').value, subject: $('libSubject').value }).catch((err) => ({ ok: false, error: err.message }));
   if (!res?.ok) {
-    $('libError').textContent = res?.error || 'Couldn\'t add this video.';
+    $('libError').textContent = res?.error || 'Couldn\'t add this link.';
     $('libError').hidden = false;
     return;
   }
   showLibraryForm(false);
-  toast(res.playlistIgnored ? 'Video added (playlist ignored — single videos only)' : 'Added to your Learning Library');
+  if (res.item?.type === 'playlist') toast('Playlist added — its videos count when YouTube shows them in this playlist');
+  else toast(res.playlistIgnored ? 'Video added (to add the whole playlist, paste the playlist page link)' : 'Added to your Learning Library');
 }
 
 function render() {

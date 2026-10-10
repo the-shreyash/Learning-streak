@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Udemy Learning Streak",
-  "short_name": "Learning Streak",
+  "name": "LearningStreak",
+  "short_name": "LearningStreak",
   "version": "1.2.1",
-  "description": "Personal daily learning streak for Udemy. Counts lecture content you actively watch (speed-aware). 100% local.",
+  "description": "Build consistent learning habits: tracks genuine study time on Udemy and YouTube videos you choose, with daily streaks. 100% local.",
   "minimum_chrome_version": "116",
   "icons": {
     "16": "icons/icon16.png",
@@ -12,7 +12,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Udemy Learning Streak",
+    "default_title": "LearningStreak",
     "default_popup": "src/popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -29,7 +29,7 @@
     "type": "module"
   },
   "permissions": ["storage", "alarms", "notifications", "idle", "scripting"],
-  "host_permissions": ["https://*.udemy.com/*", "https://www.youtube.com/*"],
+  "host_permissions": ["https://*.udemy.com/*", "https://www.youtube.com/*", "https://www.coursera.org/*"],
   "content_scripts": [
     {
       "matches": ["https://*.udemy.com/*"],
@@ -49,6 +49,20 @@
       "js": [
         "src/content/activityRules.js",
         "src/content/youtubeDetector.js",
+        "src/content/youtubePlaylist.js",
+        "src/content/videoTracker.js",
+        "src/content/activityTracker.js",
+        "src/content/sites.js",
+        "src/content/main.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://www.coursera.org/*"],
+      "js": [
+        "src/content/activityRules.js",
+        "src/content/courseraDetector.js",
         "src/content/videoTracker.js",
         "src/content/activityTracker.js",
         "src/content/sites.js",

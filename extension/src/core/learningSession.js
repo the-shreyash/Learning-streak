@@ -10,6 +10,8 @@
  *   courseId, courseTitle, // grouping for course totals (playlist / course)
  *   lessonId, lessonTitle, // the lecture / video inside the course (optional)
  *   subject,               // user-chosen subject (optional, never inferred)
+ *   playlistId,            // YouTube: the registered playlist the video was PROVEN to be
+ *   playlistTitle,         //   in when it counted through that playlist (optional)
  *   startedAt, endedAt,    // real ms timestamps (debug clock offset applied)
  *   contentSeconds,        // validated content consumed (speed-aware) — PRIMARY
  *   actualActiveSeconds,   // real time spent genuinely playing
@@ -23,6 +25,7 @@ import { isKnownPlatform, getPlatform } from '../platforms/registry.js';
 
 const MAX_STR = 200;
 const CONTENT_TYPES = new Set(['course', 'video', 'playlist']);
+const PLAYLIST_ID_RE = /^[A-Za-z0-9_-]{2,64}$/;
 const roundFine = (n) => Math.round(n * 1e6) / 1e6;
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const nonNeg = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
@@ -54,6 +57,9 @@ export function normalizeSource(raw) {
     lessonId: cleanStr(raw.lessonId),
     lessonTitle: cleanStr(raw.lessonTitle),
     subject: cleanStr(raw.subject),
+    // Attribution only: the content is still the video (contentId).
+    playlistId: typeof raw.playlistId === 'string' && PLAYLIST_ID_RE.test(raw.playlistId) ? raw.playlistId : null,
+    playlistTitle: typeof raw.playlistId === 'string' && PLAYLIST_ID_RE.test(raw.playlistId) ? cleanStr(raw.playlistTitle) : null,
   };
 }
 
@@ -110,6 +116,8 @@ export function serializeSession(session) {
     lessonId: session.lessonId,
     lessonTitle: session.lessonTitle,
     subject: session.subject,
+    playlistId: session.playlistId,
+    playlistTitle: session.playlistTitle,
     startedAt: session.startedAt,
     endedAt: session.endedAt,
     contentSeconds: session.contentSeconds,

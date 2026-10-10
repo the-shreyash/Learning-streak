@@ -15,7 +15,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchChrome } from './cdp.mjs';
+import { launchChrome, resolveChromeExecutable, resolveHeadless } from './cdp.mjs';
 import { startMockUdemy } from './mockUdemy.mjs';
 import { startMockYouTube } from './mockYouTube.mjs';
 
@@ -23,10 +23,10 @@ if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.E2E_NO_
   const r = spawnSync('xvfb-run', ['-a', process.execPath, fileURLToPath(import.meta.url)], { stdio: 'inherit', env: { ...process.env, E2E_NO_XVFB: '1' } });
   process.exit(r.status ?? 1);
 }
-const HEADLESS = !process.env.DISPLAY;
+const HEADLESS = resolveHeadless();
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
-const executable = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const executable = resolveChromeExecutable();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'streak-yt-'));
 const videoPath = path.join(here, 'fixtures', 'lecture-60min.webm');
@@ -108,7 +108,7 @@ async function popupStatus() {
 }
 
 try {
-  console.log('\nLearnStreak V2.1 Phase B — YouTube (MOCKED FIXTURE www.youtube.com)\n');
+  console.log('\nLearningStreak V2.1 Phase B — YouTube (MOCKED FIXTURE www.youtube.com)\n');
   chrome = await launchChrome({ executable, userDataDir: path.join(tmp, 'profile'), extensionDir: path.join(root, 'extension'), hostRules, headless: HEADLESS });
   cdp = chrome.cdp;
   await cdp.send('Target.setDiscoverTargets', { discover: true });
@@ -135,10 +135,12 @@ try {
     await new Promise(r => setTimeout(r, 700));
     return { error: document.getElementById('libError').hidden ? '' : document.getElementById('libError').textContent, formOpen: !document.getElementById('libForm').hidden };
   })()`);
-  let r = await submit('https://www.youtube.com/playlist?list=PLZHQObOWTQDNU6R1_67000Dx_ZCJB-3pi');
+  // Phase C: regular playlists are registrable now (tests/unit/v2.youtubePlaylist*.test.mjs);
+  // a Mix — generated around whatever video starts it — must still be refused.
+  let r = await submit(`https://www.youtube.com/playlist?list=RD${B}`);
   const r2 = await submit('https://example.com/watch?v=aircAruvnKk');
-  check('registration: playlist / non-YouTube URLs rejected with a clear message, nothing stored',
-    /single video/.test(r.error) && /Only YouTube/.test(r2.error) && JSON.stringify((await storageAll()).library) === '{}', `${r.error} | ${r2.error}`);
+  check('registration: Mix playlist / non-YouTube URLs rejected with a clear message, nothing stored',
+    /Mixes/.test(r.error) && /Only YouTube/.test(r2.error) && JSON.stringify((await storageAll()).library) === '{}', `${r.error} | ${r2.error}`);
   r = await submit(`https://www.youtube.com/watch?v=${A}&list=PLZHQObOWTQDNU6R1_67000Dx_ZCJB-3pi&index=1`, 'Neural networks', 'Deep Learning');
   let lib = (await storageAll()).library;
   const item = lib[`youtube:video:${A}`];

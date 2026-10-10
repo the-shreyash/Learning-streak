@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { launchChrome } from './cdp.mjs';
+import { launchChrome, resolveChromeExecutable, resolveHeadless } from './cdp.mjs';
 import { startMockUdemy } from './mockUdemy.mjs';
 
 // Real window focus/blur needs a headful browser. On Linux without a display,
@@ -26,12 +26,12 @@ if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.E2E_NO_
     process.exit(r.status ?? 1);
   }
 }
-const HEADLESS = !process.env.DISPLAY;
+const HEADLESS = resolveHeadless();
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
 const extensionDir = path.join(root, 'extension');
-const executable = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const executable = resolveChromeExecutable();
 const shotsDir = process.env.E2E_SCREENSHOTS || '';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -157,7 +157,7 @@ async function watchFor(page, seconds) {
 }
 
 try {
-  console.log('\nUdemy Learning Streak — E2E\n');
+  console.log('\nLearningStreak — E2E\n');
   SW = await boot();
   check('extension loads and service worker starts', !!SW.extId, SW.extId);
 

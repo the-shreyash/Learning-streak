@@ -1,4 +1,4 @@
-/** Popup controller: reads state, polls Udemy / YouTube tabs (incl. background ones) for live status. */
+/** Popup controller: reads state, polls Udemy / YouTube / Coursera tabs (incl. background ones) for live status. */
 import { readState, onStateChange, sendToBackground } from '../shared/stateClient.js';
 import { todayKeyFor } from '../core/clock.js';
 import { learningSecondsOf, activeSecondsOf } from '../core/records.js';
@@ -25,8 +25,8 @@ const SHORT_REASON = {
   'loading': 'Loading',
   'ad': 'Ad playing',
 };
-const TRACKED_URL_RE = /^https:\/\/(([a-z0-9-]+\.)*udemy\.com|www\.youtube\.com)\//i;
-const TRACKED_TAB_PATTERNS = ['https://*.udemy.com/*', 'https://www.youtube.com/*'];
+const TRACKED_URL_RE = /^https:\/\/(([a-z0-9-]+\.)*udemy\.com|www\.youtube\.com|www\.coursera\.org)\//i;
+const TRACKED_TAB_PATTERNS = ['https://*.udemy.com/*', 'https://www.youtube.com/*', 'https://www.coursera.org/*'];
 
 const $ = (id) => document.getElementById(id);
 let state = null;
@@ -67,6 +67,7 @@ function renderStatus() {
     title = REASON_TEXT[live.reason] || '';
     if (!live.onLearnPage) mode = 'idle';
     if (live.platform === 'youtube' && !live.onLearnPage) { text = 'Not on a video'; title = 'Open a YouTube video from your Learning Library to start tracking'; }
+    if (live.platform === 'coursera' && !live.onLearnPage) { text = 'Not on a lecture'; title = 'Open a Coursera lecture video to start tracking'; }
   }
   chip.dataset.state = mode;
   $('statusText').textContent = text;

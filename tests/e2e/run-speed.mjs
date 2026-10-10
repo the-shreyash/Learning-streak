@@ -17,19 +17,20 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchChrome } from './cdp.mjs';
+import { launchChrome, resolveChromeExecutable, resolveHeadless } from './cdp.mjs';
 import { startMockUdemy } from './mockUdemy.mjs';
+import { createMediaTrace, printTrace } from './mediaTrace.mjs';
 
 if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.E2E_NO_XVFB && spawnSync('which', ['xvfb-run']).status === 0) {
   const r = spawnSync('xvfb-run', ['-a', process.execPath, fileURLToPath(import.meta.url)], { stdio: 'inherit', env: { ...process.env, E2E_NO_XVFB: '1' } });
   process.exit(r.status ?? 1);
 }
-const HEADLESS = !process.env.DISPLAY;
+const HEADLESS = resolveHeadless();
 const SCALE = Math.max(0.05, Number(process.env.SPEED_SCALE) || 1);
 const S = (sec) => Math.round(sec * SCALE * 1000) / 1000; // scaled seconds
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
-const executable = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const executable = resolveChromeExecutable();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const videoPath = path.join(here, 'fixtures', 'lecture-60min.webm');
@@ -42,7 +43,11 @@ if (!existsSync(videoPath)) {
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'streak-speed-'));
 const profile = path.join(tmp, 'profile');
 const results = [];
-const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? '  ✔' : '  ✘'} ${name}${detail ? `  — ${detail}` : ''}`); };
+const check = (name, ok, detail = '', m = null) => {
+  results.push({ name, ok });
+  console.log(`${ok ? '  ✔' : '  ✘'} ${name}${detail ? `  — ${detail}` : ''}`);
+  if (!ok && m?.trace) printTrace(m.trace);
+};
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
 // Tolerance: ~1 s per measured transition + 1.5 % of the expected amount.
 const tol = (expected, transitions = 2) => 1.5 * transitions + expected * 0.015;
@@ -87,9 +92,11 @@ const today = () => swEval(`chrome.storage.local.get('dailyHistory').then(r => r
 
 let page;
 const call = (expr) => cdp.eval(page.session, expr);
+const trace = createMediaTrace({ send: (...a) => cdp.send(...a), on: (fn) => cdp.on(fn) }, call);
 
 /** Run fn, then report Δcontent, Δactual and Δvideo position. */
 async function measure(fn) {
+  await trace.start();
   const r0 = await today();
   const v0 = await call('__test.time()');
   await fn();
@@ -101,13 +108,14 @@ async function measure(fn) {
     active: (r1.actualActiveSeconds || 0) - (r0.actualActiveSeconds || 0),
     video: (await call('__test.time()')) - v0,
     record: r1,
+    trace: await trace.take(),
   };
 }
 const fmt = (m) => `content ${m.content.toFixed(1)} s, actual ${m.active.toFixed(1)} s, video advanced ${m.video.toFixed(1)} s`;
 const play = async (sec) => { await call('__test.play()'); await sleep(sec * 1000); };
 
 try {
-  console.log(`\nLearnStreak V1.1 — playback-speed browser test (scale ${SCALE})\n`);
+  console.log(`\nLearningStreak V1.1 — playback-speed browser test (scale ${SCALE}, ${HEADLESS ? 'headless' : 'visible'} Chrome)\n`);
   await boot();
 
   // Daily goal sits between the 2× scenario's actual time (5 min) and its content (10 min):
@@ -120,6 +128,7 @@ try {
   await cdp.send('Target.closeTarget', { targetId: opt.targetId });
 
   page = await openTab(LECTURE_URL);
+  await trace.attach(page.session);
   await cdp.send('Target.activateTarget', { targetId: page.targetId });
   await sleep(2500);
   const tabId = await swEval(`chrome.tabs.query({ url: 'https://*.udemy.com/*' }).then(t => t[0].id)`);
@@ -134,9 +143,9 @@ try {
     pingRate = await swEval(`chrome.tabs.sendMessage(${tabId}, { type: 'popup:ping' }).then(r => r.playbackRate)`);
     await sleep(S(150) * 1000);
   });
-  check(`2× for ${S(300)} s real → content ≈${S(600)} s`, near(m.content, S(600), tol(S(600))), fmt(m));
-  check(`2× → actual watch time ≈${S(300)} s (separate metric)`, near(m.active, S(300), tol(S(300))));
-  check('2× → content matches how far the video actually advanced', near(m.content, m.video, tol(m.video)));
+  check(`2× for ${S(300)} s real → content ≈${S(600)} s`, near(m.content, S(600), tol(S(600))), fmt(m), m);
+  check(`2× → actual watch time ≈${S(300)} s (separate metric)`, near(m.active, S(300), tol(S(300))), '', m);
+  check('2× → content matches how far the video actually advanced', near(m.content, m.video, tol(m.video)), '', m);
   check(`daily goal (${goalMin} min) completed by CONTENT; actual watch time alone would not have`, m.record.completed === true && (m.record.actualActiveSeconds < m.record.goalSeconds || SCALE < 0.5),
     `goal ${m.record.goalSeconds}s, content ${m.record.contentSeconds.toFixed(0)}s, actual ${m.record.actualActiveSeconds.toFixed(0)}s`);
   check('live tracker reports current speed 2× (shown in popup)', pingRate === 2, String(pingRate));
@@ -144,12 +153,12 @@ try {
   // ---- 1.5× for 4 real minutes
   await call('__test.rate(1.5)');
   m = await measure(() => play(S(240)));
-  check(`1.5× for ${S(240)} s real → content ≈${S(360)} s`, near(m.content, S(360), tol(S(360))) && near(m.active, S(240), tol(S(240))), fmt(m));
+  check(`1.5× for ${S(240)} s real → content ≈${S(360)} s`, near(m.content, S(360), tol(S(360))) && near(m.active, S(240), tol(S(240))), fmt(m), m);
 
   // ---- 1× for 4 real minutes
   await call('__test.rate(1)');
   m = await measure(() => play(S(240)));
-  check(`1× for ${S(240)} s real → content ≈${S(240)} s = actual`, near(m.content, S(240), tol(S(240))) && near(m.active, S(240), tol(S(240))), fmt(m));
+  check(`1× for ${S(240)} s real → content ≈${S(240)} s = actual`, near(m.content, S(240), tol(S(240))) && near(m.active, S(240), tol(S(240))), fmt(m), m);
 
   // ---- Seek forward 5 minutes between two watches
   m = await measure(async () => {
@@ -157,7 +166,7 @@ try {
     await call('__test.seekBy(300)');
     await sleep(S(30) * 1000);
   });
-  check(`watch ${S(30)} s, seek +300 s, watch ${S(30)} s → content ≈${S(60)} s (not ${S(60) + 300})`, near(m.content, S(60), tol(S(60), 3)), fmt(m));
+  check(`watch ${S(30)} s, seek +300 s, watch ${S(30)} s → content ≈${S(60)} s (not ${S(60) + 300})`, near(m.content, S(60), tol(S(60), 3)), fmt(m), m);
 
   // ---- Reverse seek
   m = await measure(async () => {
@@ -165,7 +174,7 @@ try {
     await call('__test.seekBy(-120)');
     await sleep(S(30) * 1000);
   });
-  check(`watch ${S(30)} s, seek −120 s, watch ${S(30)} s → content ≈${S(60)} s, never negative`, near(m.content, S(60), tol(S(60), 3)) && m.content > 0, fmt(m));
+  check(`watch ${S(30)} s, seek −120 s, watch ${S(30)} s → content ≈${S(60)} s, never negative`, near(m.content, S(60), tol(S(60), 3)) && m.content > 0, fmt(m), m);
 
   // ---- Tab switch while the video keeps playing
   let hidden = null; let playingHidden = null;
@@ -181,7 +190,7 @@ try {
     await sleep(S(30) * 1000);
   });
   check(`watch ${S(30)} s, other tab ${S(30)} s (video playing), watch ${S(30)} s → ≈${S(90)} s (V1.2: background playback counts)`,
-    hidden === 'hidden' && playingHidden && near(m.content, S(90), tol(S(90), 3)), `${hidden}, ${fmt(m)}`);
+    hidden === 'hidden' && playingHidden && near(m.content, S(90), tol(S(90), 3)), `${hidden}, ${fmt(m)}`, m);
 
   // ---- Pause
   m = await measure(async () => {
@@ -190,7 +199,7 @@ try {
     await sleep(S(30) * 1000);
     await play(S(30));
   });
-  check(`watch ${S(30)} s, pause ${S(30)} s, watch ${S(30)} s → ≈${S(60)} s`, near(m.content, S(60), tol(S(60), 3)), fmt(m));
+  check(`watch ${S(30)} s, pause ${S(30)} s, watch ${S(30)} s → ≈${S(60)} s`, near(m.content, S(60), tol(S(60), 3)), fmt(m), m);
 
   // ---- Window focus lost while the video plays (V1.2: still counted)
   m = await measure(async () => {
@@ -201,7 +210,7 @@ try {
     await cdp.send('Target.activateTarget', { targetId: page.targetId });
     await sleep(S(30) * 1000);
   });
-  check(`window unfocused for ${S(30)} s (video playing) → still counted (≈${S(90)} s)`, near(m.content, S(90), tol(S(90), 3)), fmt(m));
+  check(`window unfocused for ${S(30)} s (video playing) → still counted (≈${S(90)} s)`, near(m.content, S(90), tol(S(90), 3)), fmt(m), m);
 
   // ---- Lecture switch at 2× (SPA navigation, new <video>, far-apart positions)
   await call('__test.seekTo(2400)');
@@ -213,7 +222,7 @@ try {
     await sleep(S(20) * 1000);
   });
   check(`lecture switch: ${S(20)} s at 2× on lecture A (at 40:00) + ${S(20)} s at 1× on lecture B → ≈${S(60)} s, no 40-min jump`,
-    near(m.content, S(60), tol(S(60), 3)), `content ${m.content.toFixed(1)} s, actual ${m.active.toFixed(1)} s`);
+    near(m.content, S(60), tol(S(60), 3)), `content ${m.content.toFixed(1)} s, actual ${m.active.toFixed(1)} s`, m);
 
   // ---- Popup shows both metrics
   const totals = await today();

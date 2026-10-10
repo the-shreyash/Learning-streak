@@ -22,6 +22,13 @@ const STATE_TEXT = {
   'locked': 'Screen locked', 'frozen': 'Tab suspended', 'no-video': 'Waiting for the video', 'checking': 'Checking…',
 };
 
+const UNREGISTERED = {
+  'not-registered': ['Not registered as learning', 'Only videos in your Learning Library — or in a playlist you added — count.'],
+  'disabled': ['Disabled in Learning Library', 'Enable it in the Learning Library to count it.'],
+  'not-in-playlist': ['Not in your registered playlist', 'YouTube doesn\'t list this video in that playlist, so it isn\'t counted.'],
+  'playlist-unverified': ['Playlist membership not confirmed', 'Only videos YouTube shows as part of your registered playlist count.'],
+};
+
 /**
  * @returns {boolean} whether the card is shown (it replaces the course card)
  */
@@ -37,10 +44,10 @@ export function renderLearningStatus(state, live) {
   $('learnTitle').textContent = title || `YouTube video ${id}`;
   $('learnTitle').title = $('learnTitle').textContent;
 
+  const unregistered = UNREGISTERED[live.registration];
   let heading;
-  if (live.counting) heading = 'Learning';
-  else if (live.registration === 'disabled') heading = 'Disabled in Learning Library';
-  else if (live.registration === 'not-registered') heading = 'Not registered as learning';
+  if (live.counting) heading = live.via === 'playlist' ? 'Learning · via playlist' : 'Learning';
+  else if (unregistered) heading = unregistered[0];
   else heading = STATE_TEXT[live.reason] || 'Paused';
   $('learnState').textContent = heading;
 
@@ -49,11 +56,12 @@ export function renderLearningStatus(state, live) {
   metrics.hidden = !registered;
   hint.hidden = registered;
   if (registered) {
+    // Sessions are per video (contentId), whether it counts directly or through a playlist.
     const session = openSessionFor(state, 'youtube', id);
     $('learnContent').textContent = formatMinSec((session?.contentSeconds || 0) + (live.unsavedContent || 0));
     $('learnActual').textContent = formatMinSec((session?.actualActiveSeconds || 0) + (live.unsavedActive || 0));
   } else {
-    hint.textContent = live.registration === 'disabled' ? 'Enable it in the Learning Library to count it.' : 'Only videos in your Learning Library count.';
+    hint.textContent = unregistered ? unregistered[1] : 'Only videos in your Learning Library count.';
   }
   return true;
 }

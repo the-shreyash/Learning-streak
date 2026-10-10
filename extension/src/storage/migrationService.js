@@ -14,6 +14,7 @@ import { normalizeDayRecord, normalizeCourse } from '../core/records.js';
 import { normalizeSessions } from '../core/learningSession.js';
 import { normalizePlatformTotals } from '../core/dailyAggregation.js';
 import { normalizeLibrary } from '../core/learningLibrary.js';
+import { normalizeMembership } from '../core/playlistMembership.js';
 
 const MIGRATIONS = {
   // 0 → 1: pre-release / empty storage. Nothing to transform beyond defaults.
@@ -33,7 +34,9 @@ const MIGRATIONS = {
 // which is idempotent: a missing `sessions` map is created empty — no sessions,
 // platforms or subjects are invented for V1 history — and malformed V2 entries
 // are dropped. The same holds for the Learning Library (`library`, created empty:
-// no YouTube content is ever registered on the user's behalf).
+// no YouTube content is ever registered on the user's behalf) and for the proven
+// playlist membership index (`playlistMembership`, created empty: no membership is
+// ever reconstructed from history — only YouTube's own playlist panel proves it).
 
 function isObj(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
 
@@ -76,6 +79,9 @@ export function migrate(raw, nowMs = Date.now()) {
   if (!isObj(state.library)) changed = true;
   const { library, dropped: droppedItems } = normalizeLibrary(state.library);
   if (droppedItems || (isObj(state.library) && JSON.stringify(library) !== JSON.stringify(state.library))) changed = true;
+  if (!isObj(state.playlistMembership)) changed = true;
+  const { membership: playlistMembership, dropped: droppedMembers } = normalizeMembership(state.playlistMembership, library);
+  if (droppedMembers) changed = true;
 
   return {
     changed,
@@ -87,6 +93,7 @@ export function migrate(raw, nowMs = Date.now()) {
       courses,
       sessions,
       library,
+      playlistMembership,
       meta: { ...defaults.meta, ...(isObj(state.meta) ? state.meta : {}) },
       debug: { ...defaults.debug, ...(isObj(state.debug) ? state.debug : {}) },
     },

@@ -9,10 +9,12 @@
 
 import { udemyPlatform } from './udemy.js';
 import { youtubePlatform } from './youtube.js';
+import { courseraPlatform } from './coursera.js';
 
 const PLATFORMS = Object.freeze({
   [udemyPlatform.id]: udemyPlatform,
   [youtubePlatform.id]: youtubePlatform,
+  [courseraPlatform.id]: courseraPlatform,
 });
 
 export const PLATFORM_IDS = Object.freeze(Object.keys(PLATFORMS));

@@ -25,7 +25,7 @@
 import { applyCredit } from './timerEngine.js';
 import { normalizeSource, contentKeyOf, createSession, extendSession, serializeSession } from './learningSession.js';
 import { getPlatform, LEGACY_PLATFORM } from '../platforms/registry.js';
-import { targetStatus } from './learningLibrary.js';
+import { authorizeYouTubeVideo } from './learningLibrary.js';
 
 /** A pause longer than this between credits on the same content starts a new session. */
 export const SESSION_GAP_MS = 5 * 60 * 1000;
@@ -89,6 +89,8 @@ function pickTitles(source, open) {
     courseTitle: source.courseTitle ?? open.courseTitle ?? null,
     lessonTitle: source.lessonTitle ?? open.lessonTitle ?? null,
     subject: source.subject ?? open.subject ?? null,
+    playlistId: source.playlistId ?? open.playlistId ?? null,
+    playlistTitle: source.playlistId ? source.playlistTitle : (open.playlistTitle ?? null),
   };
 }
 
@@ -124,19 +126,33 @@ export function recordLearning(prevState, credit, opts = {}) {
 
 /**
  * Record a credit chunk from a tab. For platforms whose content must be
- * registered, the credit is rejected ('not-registered' / 'disabled') unless the
- * exact target is an enabled Learning Library item — checked against the state
- * being written, so a library change can never race a credit. The library
- * item's title/subject (the user's own words) take precedence over the page's.
- * @returns same as recordLearning(), plus `targetStatus` for registered platforms
+ * registered, the credit is rejected ('not-registered' / 'disabled') unless it is
+ * authorized by the Learning Library — checked against the state being written,
+ * so a library change can never race a credit:
+ *   - the video is an enabled item, or
+ *   - it was proven earlier to be a member of an enabled playlist
+ *     (state.playlistMembership — core/playlistMembership.js), or
+ *   - the credit carries `playlistId` (sent only while the page PROVES the video is
+ *     in that playlist — content/youtubePlaylist.js) and that playlist is enabled.
+ * The library item's title/subject (the user's own words) take precedence over the page's.
+ * @returns same as recordLearning(), plus `targetStatus` (and `videoStatus` /
+ *   `playlistStatus`) for registered platforms
  */
 export function recordCredit(prevState, credit, opts = {}) {
   const source = normalizeSource(credit?.source);
   if (!source) return { state: prevState, appliedSeconds: 0, appliedContent: 0, completedDays: [], rejected: 'invalid-source' };
   if (getPlatform(source.platform).detection !== 'registered') return recordLearning(prevState, { ...credit, source }, opts);
 
-  const { status, item } = targetStatus(prevState.library, source.platform, source.contentType, source.contentId);
-  if (status !== 'registered') return { state: prevState, appliedSeconds: 0, appliedContent: 0, completedDays: [], rejected: status, targetStatus: status };
-  const authorized = { ...source, courseTitle: item.title ?? source.courseTitle, subject: item.subject ?? null };
-  return { ...recordLearning(prevState, { ...credit, source: authorized }, opts), targetStatus: status };
+  if (source.platform !== 'youtube' || source.contentType !== 'video') {
+    return { state: prevState, appliedSeconds: 0, appliedContent: 0, completedDays: [], rejected: 'not-registered', targetStatus: 'not-registered' };
+  }
+  const auth = authorizeYouTubeVideo(prevState.library, source.contentId, source.playlistId, prevState.playlistMembership);
+  const statuses = { targetStatus: auth.status, videoStatus: auth.videoStatus, ...(source.playlistId ? { playlistStatus: auth.playlistStatus } : {}) };
+  if (auth.status !== 'registered') return { state: prevState, appliedSeconds: 0, appliedContent: 0, completedDays: [], rejected: auth.status, ...statuses };
+  const authorized = auth.via === 'video'
+    // Direct registration: the video is the learning content; no playlist credit is claimed.
+    ? { ...source, courseTitle: auth.item.title ?? source.courseTitle, subject: auth.item.subject ?? null, playlistId: null, playlistTitle: null }
+    // Through a playlist: the claimed one (proven live), else one the video was proven a member of before.
+    : { ...source, subject: auth.item.subject ?? null, playlistId: auth.playlistId, playlistTitle: auth.item.title ?? (auth.playlistId === source.playlistId ? source.playlistTitle : null) };
+  return { ...recordLearning(prevState, { ...credit, source: authorized }, opts), ...statuses };
 }

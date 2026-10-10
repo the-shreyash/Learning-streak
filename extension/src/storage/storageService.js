@@ -10,7 +10,7 @@
 
 import { migrate } from './migrationService.js';
 
-export const STATE_KEYS = ['schemaVersion', 'settings', 'dailyHistory', 'courses', 'sessions', 'library', 'meta', 'debug'];
+export const STATE_KEYS = ['schemaVersion', 'settings', 'dailyHistory', 'courses', 'sessions', 'library', 'playlistMembership', 'meta', 'debug'];
 
 export function chromeLocalAdapter(area = globalThis.chrome?.storage?.local) {
   return {

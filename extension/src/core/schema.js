@@ -19,6 +19,10 @@
  *   sessions: { [id]: LearningSession }   (core/learningSession.js)
  *   library: { [id]: LibraryItem }        (core/learningLibrary.js) — user-registered
  *       learning content (YouTube videos). Configuration, not statistics: kept on reset.
+ *   playlistMembership: { [playlistId]: { videoIds, updatedAt } }   (core/playlistMembership.js)
+ *       video IDs YouTube's own playlist panel PROVED to be in a registered playlist.
+ *       Eligibility metadata, not statistics: kept on reset, never exported, never
+ *       turned into time or sessions; created empty (nothing is inferred).
  *   debug: { clockOffsetMs }      // only honoured when DEBUG_TOOLS is true
  * }
  */
@@ -42,6 +46,7 @@ export function createDefaultState(nowMs = Date.now()) {
     courses: {},
     sessions: {},
     library: {},
+    playlistMembership: {},
     meta: {
       longestStreak: 0,
       currentCourse: null,

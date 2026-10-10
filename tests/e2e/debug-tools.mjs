@@ -6,7 +6,7 @@ import { cpSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:f
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchChrome } from './cdp.mjs';
+import { launchChrome, resolveChromeExecutable } from './cdp.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'streak-debug-'));
@@ -15,7 +15,7 @@ cpSync(path.join(root, 'extension'), extCopy, { recursive: true });
 const cfg = path.join(extCopy, 'src/config/config.js');
 writeFileSync(cfg, readFileSync(cfg, 'utf8').replace('DEBUG_TOOLS = false', 'DEBUG_TOOLS = true'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const { proc, cdp } = await launchChrome({ executable: process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', userDataDir: path.join(tmp, 'p'), extensionDir: extCopy, hostRules: 'MAP none 127.0.0.1' });
+const { proc, cdp } = await launchChrome({ executable: resolveChromeExecutable(), userDataDir: path.join(tmp, 'p'), extensionDir: extCopy, hostRules: 'MAP none 127.0.0.1' });
 let failed = 0;
 const check = (n, c, d = '') => { if (!c) failed += 1; console.log(`${c ? '  ✔' : '  ✘'} ${n}${d ? `  — ${d}` : ''}`); };
 try {

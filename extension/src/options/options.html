@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Settings · Udemy Learning Streak</title>
+  <title>Settings · LearningStreak</title>
   <link rel="icon" href="../../icons/icon32.png">
   <link rel="stylesheet" href="../shared/theme.css">
   <link rel="stylesheet" href="options.css">
@@ -14,7 +14,7 @@
       <img src="../../icons/icon48.png" alt="" width="40" height="40">
       <div>
         <h1>Settings</h1>
-        <p class="lede">Udemy Learning Streak · <span id="version">v1.0.0</span></p>
+        <p class="lede">LearningStreak · <span id="version">v1.0.0</span></p>
       </div>
       <div class="head-stat" id="headStat"></div>
     </header>
@@ -44,7 +44,7 @@
       <div class="section-head">
         <h2>Tracking</h2>
         <p>Your goal counts <b>lecture content consumed</b>: how far the video really advanced while it was playing. 5 real minutes at 2× = 10 minutes of content. Actual watch time is tracked separately. Dragging the progress bar (seeking) never counts as watching.</p>
-        <p id="trackingPolicy">LearnStreak tracks genuine video playback even when you switch tabs or work in another application. Paused, stopped, ended, frozen, locked, or sleeping sessions are not counted.</p>
+        <p id="trackingPolicy">LearningStreak tracks genuine video playback even when you switch tabs or work in another application. Paused, stopped, ended, frozen, locked, or sleeping sessions are not counted.</p>
       </div>
     </section>
 
@@ -52,15 +52,15 @@
     <section class="card section" id="library">
       <div class="section-head">
         <h2>Learning Library</h2>
-        <p>YouTube counts <b>only</b> for videos you add here. Any other YouTube video — music, entertainment, anything you didn't add — is never counted.</p>
+        <p>YouTube counts <b>only</b> for videos and playlists you add here. Any other YouTube video — music, entertainment, anything you didn't add — is never counted.</p>
       </div>
       <div class="lib-actions">
         <button class="btn btn-primary" id="libAddOpen">+ Add YouTube Content</button>
       </div>
       <form class="lib-form" id="libForm" hidden novalidate>
         <label class="field lib-field" for="libUrl">
-          <span>YouTube video URL</span>
-          <span class="input-wrap"><input id="libUrl" type="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" spellcheck="false"></span>
+          <span>YouTube video or playlist URL</span>
+          <span class="input-wrap"><input id="libUrl" type="url" placeholder="https://www.youtube.com/watch?v=… or /playlist?list=…" autocomplete="off" spellcheck="false"></span>
         </label>
         <div class="field-row">
           <label class="field lib-field" for="libTitle">
@@ -75,9 +75,9 @@
         <p class="lib-error" id="libError" role="alert" hidden></p>
         <div class="ip-buttons">
           <button class="btn" type="button" id="libCancel">Cancel</button>
-          <button class="btn btn-primary" type="submit" id="libAdd">Add video</button>
+          <button class="btn btn-primary" type="submit" id="libAdd">Add</button>
         </div>
-        <p class="hint">Single videos only. Playlists aren't supported yet — a link with <code>&amp;list=…</code> adds just that one video.</p>
+        <p class="hint">A video link (even with <code>&amp;list=…</code>) adds just that video. To add a playlist, paste its playlist page link (<code>youtube.com/playlist?list=…</code>). A playlist's videos count once YouTube has shown them <i>in that playlist</i> — open the playlist first; after that they also count from search, home or a direct link. Mixes, Watch later and Liked videos can't be added.</p>
       </form>
       <ul class="lib-list" id="libList"></ul>
     </section>

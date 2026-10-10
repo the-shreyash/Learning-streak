@@ -41,7 +41,7 @@ export async function refreshBadge(state) {
     await chrome.action.setBadgeBackgroundColor({ color: tracking ? COLORS.tracking : complete ? COLORS.complete : COLORS.idle });
     if (chrome.action.setBadgeTextColor) await chrome.action.setBadgeTextColor({ color: '#FFFFFF' });
     await chrome.action.setTitle({
-      title: `Udemy Learning Streak — ${mins} min of lecture content today${complete ? ' ✓ goal complete' : ''}${tracking ? ' · tracking' : ''}`,
+      title: `LearningStreak — ${mins} min of lecture content today${complete ? ' ✓ goal complete' : ''}${tracking ? ' · tracking' : ''}`,
     });
   } catch (e) {
     console.warn('[streak] badge update failed', e);

@@ -14,6 +14,7 @@ import { normalizeSessions } from './learningSession.js';
 import { isKnownPlatform } from '../platforms/registry.js';
 import { MAX_SESSIONS } from './learningEngine.js';
 import { normalizeLibrary, mergeLibraries } from './learningLibrary.js';
+import { pruneMembership } from './playlistMembership.js';
 
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 const MAX_DAYS = 20_000; // ~55 years
@@ -215,6 +216,9 @@ export function applyImport(currentState, data, mode = 'merge', todayKey, nowMs 
       meta: { ...currentState.meta, longestStreak: Math.max(Number(currentState.meta?.longestStreak) || 0, data.longestStreak || 0) },
     };
   }
+  // Proven playlist membership is never exported or imported (it is re-proven by
+  // watching); this device's index is kept for the playlists still registered.
+  next.playlistMembership = pruneMembership(currentState.playlistMembership, next.library);
   next.settings.dailyGoalMinutes = clampGoalMinutes(next.settings.dailyGoalMinutes);
   next.meta.longestStreak = computeStreaks(next.dailyHistory, todayKey, next.meta.longestStreak).longest;
   return next;

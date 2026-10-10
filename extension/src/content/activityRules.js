@@ -134,6 +134,9 @@
     'checking': 'Checking your Learning Library…',
     'loading': 'Loading the video — paused',
     'ad': 'Ad playing — not counted',
+    // V2.1 Phase C (YouTube playlists)
+    'not-in-playlist': 'Not part of your registered playlist — not counted',
+    'playlist-unverified': 'Can\'t confirm this video is in your registered playlist — not counted',
   });
 
   NS.RULES = RULES;

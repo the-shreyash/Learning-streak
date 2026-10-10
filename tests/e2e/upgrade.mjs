@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchChrome } from './cdp.mjs';
+import { launchChrome, resolveChromeExecutable, resolveHeadless } from './cdp.mjs';
 import { startMockUdemy } from './mockUdemy.mjs';
 
 if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.E2E_NO_XVFB && spawnSync('which', ['xvfb-run']).status === 0) {
@@ -21,7 +21,7 @@ const tmp = mkdtempSync(path.join(os.tmpdir(), 'streak-upgrade-'));
 let failed = 0;
 const check = (n, c, d = '') => { if (!c) failed += 1; console.log(`${c ? '  ✔' : '  ✘'} ${n}${d ? `  — ${d}` : ''}`); };
 const { server, port } = await startMockUdemy({ videoPath: path.join(here, 'fixtures', 'lecture-av.webm'), certDir: path.join(tmp, 'cert') });
-const { proc, cdp } = await launchChrome({ executable: process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', userDataDir: path.join(tmp, 'p'), extensionDir: path.join(root, 'extension'), hostRules: `MAP www.udemy.com 127.0.0.1:${port}`, headless: !process.env.DISPLAY });
+const { proc, cdp } = await launchChrome({ executable: resolveChromeExecutable(), userDataDir: path.join(tmp, 'p'), extensionDir: path.join(root, 'extension'), hostRules: `MAP www.udemy.com 127.0.0.1:${port}`, headless: resolveHeadless() });
 try {
   console.log('\nV1 → V1.1 upgrade\n');
   await sleep(1500);

@@ -25,19 +25,20 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchChrome } from './cdp.mjs';
+import { launchChrome, resolveChromeExecutable, resolveHeadless } from './cdp.mjs';
 import { startMockUdemy } from './mockUdemy.mjs';
+import { createMediaTrace, printTrace } from './mediaTrace.mjs';
 
 if (process.platform === 'linux' && !process.env.DISPLAY && !process.env.E2E_NO_XVFB && spawnSync('which', ['xvfb-run']).status === 0) {
   const r = spawnSync('xvfb-run', ['-a', process.execPath, fileURLToPath(import.meta.url)], { stdio: 'inherit', env: { ...process.env, E2E_NO_XVFB: '1' } });
   process.exit(r.status ?? 1);
 }
-const HEADLESS = !process.env.DISPLAY;
+const HEADLESS = resolveHeadless();
 const SCALE = Math.max(0.05, Number(process.env.SPEED_SCALE) || 1);
 const S = (sec) => Math.round(sec * SCALE * 1000) / 1000; // scaled seconds
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
-const executable = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const executable = resolveChromeExecutable();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const videoPath = path.join(here, 'fixtures', 'lecture-60min.webm');
@@ -50,7 +51,12 @@ if (!existsSync(videoPath)) {
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'streak-bg-'));
 const profile = path.join(tmp, 'profile');
 const results = [];
-const check = (name, ok, detail = '') => { if (/INCONCLUSIVE/.test(detail)) ok = false; results.push({ name, ok }); console.log(`${ok ? '  ✔' : '  ✘'} ${name}${detail ? `  — ${detail}` : ''}`); };
+const check = (name, ok, detail = '', m = null) => {
+  if (/INCONCLUSIVE/.test(detail)) ok = false;
+  results.push({ name, ok });
+  console.log(`${ok ? '  ✔' : '  ✘'} ${name}${detail ? `  — ${detail}` : ''}`);
+  if (!ok && m?.trace) printTrace(m.trace);
+};
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
 // Tolerance: ~1 s per measured transition + 1.5 % of the expected amount.
 const tol = (expected, transitions = 2) => 1.5 * transitions + expected * 0.015;
@@ -107,9 +113,12 @@ const realLockSeen = () => swEval(`(async () => {
   return seen;
 })()`);
 
+const trace = createMediaTrace({ send: (...a) => cdp.send(...a), on: (fn) => cdp.on(fn) }, call);
+
 /** Run fn, then report Δcontent, Δactual and Δvideo position (of the current lecture video). */
 async function measure(fn) {
   await realLockSeen();
+  await trace.start();
   const r0 = await today();
   const v0 = await call('__test.time()');
   await fn();
@@ -121,6 +130,7 @@ async function measure(fn) {
     active: (r1.actualActiveSeconds || 0) - (r0.actualActiveSeconds || 0),
     video: (await call('__test.time()')) - v0,
     lockedBySystem: await realLockSeen(),
+    trace: await trace.take(),
   };
 }
 const fmt = (m) => `content ${m.content.toFixed(1)} s, actual ${m.active.toFixed(1)} s, video advanced ${m.video.toFixed(1)} s${m.lockedBySystem ? '  ⚠ the test machine screen locked/idled during this scenario — INCONCLUSIVE, rerun with the screen unlocked' : ''}`;
@@ -159,12 +169,13 @@ async function backFromApp({ win, windowId }) {
 }
 
 try {
-  console.log(`\nLearnStreak V1.2 — background tracking browser test (scale ${SCALE})\n`);
+  console.log(`\nLearningStreak V1.2 — background tracking browser test (scale ${SCALE}, ${HEADLESS ? 'headless' : 'visible'} Chrome)\n`);
   chrome = await launchChrome({ executable, userDataDir: profile, extensionDir: path.join(root, 'extension'), hostRules: `MAP www.udemy.com 127.0.0.1:${port}`, headless: HEADLESS });
   cdp = chrome.cdp;
   SW = await findServiceWorker();
 
   page = await openTab(LECTURE_URL);
+  await trace.attach(page.session);
   await cdp.send('Target.activateTarget', { targetId: page.targetId });
   await sleep(2500);
   tabId = await swEval(`chrome.tabs.query({ url: 'https://*.udemy.com/*' }).then(t => t[0].id)`);
@@ -180,7 +191,7 @@ try {
     await backFromTab(other);
   });
   check(`A  watch ${S(30)} s, other tab ${S(30)} s (video playing) → ≈${S(60)} s content and actual (not ${S(30)})`,
-    st.vis === 'hidden' && st.paused === false && near(m.content, S(60), tol(S(60))) && near(m.active, S(60), tol(S(60))), `${st.vis}, ${fmt(m)}`);
+    st.vis === 'hidden' && st.paused === false && near(m.content, S(60), tol(S(60))) && near(m.active, S(60), tol(S(60))), `${st.vis}, ${fmt(m)}`, m);
 
   // ---- B: another application focused
   let tracking = null;
@@ -194,7 +205,7 @@ try {
     await backFromApp(app);
   });
   check(`B  ${S(30)} s with another window/app focused (video playing) → +≈${S(30)} s, badge stays "tracking"`,
-    st.focus === false && st.paused === false && tracking === 1 && near(m.content, S(40), tol(S(40))), `vis=${st.vis}, hasFocus=${st.focus}, ${fmt(m)}`);
+    st.focus === false && st.paused === false && tracking === 1 && near(m.content, S(40), tol(S(40))), `vis=${st.vis}, hasFocus=${st.focus}, ${fmt(m)}`, m);
 
   // ---- C: paused while in the background
   let pausedGain = null;
@@ -210,7 +221,7 @@ try {
     await backFromApp(app);
   });
   check(`C  background pause for ${S(30)} s → only the ≈${S(30)} s before the pause counts`,
-    pausedGain === 0 && near(m.content, S(30), tol(S(30))), `gain while paused ${pausedGain}, ${fmt(m)}`);
+    pausedGain === 0 && near(m.content, S(30), tol(S(30))), `gain while paused ${pausedGain}, ${fmt(m)}`, m);
 
   // ---- D: lecture reaches its end in the background
   await call(`__test.seekTo(${3600 - S(20)})`);
@@ -223,7 +234,7 @@ try {
     await backFromApp(app);
   });
   check(`D  lecture ends in the background → counting stops at the end (≈${S(20)} s of ${S(40)} s)`,
-    st.ended === true && near(m.content, S(20), tol(S(20))), `ended=${st.ended}, ${fmt(m)}`);
+    st.ended === true && near(m.content, S(20), tol(S(20))), `ended=${st.ended}, ${fmt(m)}`, m);
 
   // ---- E: 2× in the background for 5 real minutes
   await call('__test.seekTo(120)');
@@ -236,7 +247,7 @@ try {
     await backFromApp(app);
   });
   check(`E  2× in the background for ${S(300)} s real → content ≈${S(600)} s, actual ≈${S(300)} s`,
-    near(m.content, S(600), tol(S(600))) && near(m.active, S(300), tol(S(300))) && near(m.content, m.video, tol(m.video)), fmt(m));
+    near(m.content, S(600), tol(S(600))) && near(m.active, S(300), tol(S(300))) && near(m.content, m.video, tol(m.video)), fmt(m), m);
   await call('__test.rate(1)');
 
   // ---- F: seek 5:00 → 15:00 while the tab is hidden
@@ -250,7 +261,7 @@ try {
     await backFromTab(other);
   });
   check(`F  background seek 5:00 → 15:00 → only ≈${S(40)} s of playback counted (not +600 s)`,
-    near(m.content, S(40), tol(S(40), 3)), fmt(m));
+    near(m.content, S(40), tol(S(40), 3)), fmt(m), m);
 
   // ---- Background lecture switch (40:00 → new lecture at 0:00)
   await call('__test.seekTo(2400)');
@@ -264,7 +275,7 @@ try {
     await backFromTab(other);
   });
   check(`+  lecture switch in the background → ≈${S(40)} s, no 40-minute jump`,
-    near(m.content, S(40), tol(S(40), 3)), `content ${m.content.toFixed(1)} s, actual ${m.active.toFixed(1)} s`);
+    near(m.content, S(40), tol(S(40), 3)), `content ${m.content.toFixed(1)} s, actual ${m.active.toFixed(1)} s`, m);
 
   // ---- G: screen locked while playing in the background.
   // chrome.idle can't be locked from a test, so the worker's idle query is stubbed
@@ -290,7 +301,7 @@ try {
     await backFromTab(other);
   });
   check(`G  locked for ${S(30)} s in the background → 0 counted while locked, resumes after unlock (≈${S(40)} s total)`,
-    lockedGain === 0 && near(m.content, S(40), tol(S(40), 4)), `gain while locked ${lockedGain}, ${fmt(m)}`);
+    lockedGain === 0 && near(m.content, S(40), tol(S(40), 4)), `gain while locked ${lockedGain}, ${fmt(m)}`, m);
 } catch (err) {
   check('background test completed without errors', false, err.stack || String(err));
 } finally {

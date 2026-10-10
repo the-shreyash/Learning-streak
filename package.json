@@ -1,8 +1,8 @@
 {
-  "name": "udemy-learning-streak",
+  "name": "learningstreak",
   "version": "1.2.1",
   "private": true,
-  "description": "Personal Udemy learning streak Chrome extension (Manifest V3, local-only).",
+  "description": "LearningStreak: build consistent learning habits by tracking genuine study time and daily streaks (Chrome extension, Manifest V3, local-only).",
   "type": "module",
   "scripts": {
     "test": "node --test tests/unit/*.test.mjs",
@@ -17,7 +17,9 @@
     "test:speed": "node tests/e2e/run-speed.mjs",
     "test:background": "node tests/e2e/run-background.mjs",
     "test:upgrade": "node tests/e2e/upgrade.mjs",
-    "test:youtube": "node tests/e2e/run-youtube.mjs"
+    "test:youtube": "node tests/e2e/run-youtube.mjs",
+    "test:youtube:real": "node tests/e2e/real-youtube-playlist.mjs",
+    "test:coursera": "node tests/e2e/run-coursera.mjs"
   },
   "engines": {
     "node": ">=18"

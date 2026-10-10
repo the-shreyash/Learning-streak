@@ -6,10 +6,11 @@
  *  - Reject credit while the screen is locked (chrome.idle).
  *  - Goal-complete notifications, daily reminder, badge.
  *  - Settings / import / reset requests from the popup & options pages.
- *  - Re-inject the tracker into already-open Udemy / YouTube tabs after
+ *  - Re-inject the tracker into already-open Udemy / YouTube / Coursera tabs after
  *    install/update so tracking continues without reloading the page.
- *  - V2.1: the Learning Library (registered YouTube videos) — lookups from tabs,
- *    add / enable / disable / delete from extension pages.
+ *  - V2.1: the Learning Library (registered YouTube videos and playlists) — lookups from tabs,
+ *    add / enable / disable / delete from extension pages — and the index of video IDs
+ *    proven (by YouTube's playlist panel) to be members of registered playlists.
  *
  * All listeners are registered synchronously at top level, as MV3 requires.
  */
@@ -19,7 +20,8 @@ import { createStorageService } from '../storage/storageService.js';
 import { createDefaultState, normalizeSettings } from '../core/schema.js';
 import { applyGoalChange, addSecondsToDay, markCelebrationShown } from '../core/timerEngine.js';
 import { recordCredit } from '../core/learningEngine.js';
-import { addYouTubeVideo, setLibraryItemEnabled, removeLibraryItem, targetStatus } from '../core/learningLibrary.js';
+import { addYouTubeContent, setLibraryItemEnabled, removeLibraryItem, targetStatus, knownMembership } from '../core/learningLibrary.js';
+import { addProvenMembers, pruneMembership } from '../core/playlistMembership.js';
 import { sourceFromLegacyCourse } from '../platforms/udemy.js';
 import { validateImport, applyImport } from '../core/dataTransfer.js';
 import { effectiveOffset, todayKeyFor } from '../core/clock.js';
@@ -32,7 +34,8 @@ import { syncReminderAlarm, scheduleMidnight, handleReminder, REMINDER_ALARM, MI
 const storage = createStorageService();
 const UDEMY_TAB_PATTERN = 'https://*.udemy.com/*';
 const YOUTUBE_TAB_PATTERN = 'https://www.youtube.com/*';
-const TRACKED_TAB_PATTERNS = [UDEMY_TAB_PATTERN, YOUTUBE_TAB_PATTERN];
+const COURSERA_TAB_PATTERN = 'https://www.coursera.org/*';
+const TRACKED_TAB_PATTERNS = [UDEMY_TAB_PATTERN, YOUTUBE_TAB_PATTERN, COURSERA_TAB_PATTERN];
 
 // ---------------------------------------------------------------------------
 // Screen lock detection
@@ -46,9 +49,9 @@ async function isLocked() {
   return lockedCache;
 }
 
-async function broadcastToTabs(message, url = TRACKED_TAB_PATTERNS) {
+async function broadcastToTabs(message, url = TRACKED_TAB_PATTERNS, exceptTabId = null) {
   try {
-    const tabs = await chrome.tabs.query({ url });
+    const tabs = (await chrome.tabs.query({ url })).filter((t) => t.id !== exceptTabId);
     await Promise.all(tabs.map((t) => chrome.tabs.sendMessage(t.id, message).catch(() => {})));
   } catch { /* no tabs */ }
 }
@@ -82,7 +85,8 @@ async function onCredit(msg, sender) {
   }
   // V2.1: every credit goes through the Learning Engine. A V1-shaped credit (no
   // `source`) comes from the Udemy content script and is mapped by the Udemy adapter.
-  // recordCredit() rejects YouTube time unless the video is an ENABLED Library item.
+  // recordCredit() rejects YouTube time unless the video is an ENABLED Library item,
+  // or a proven member of an ENABLED Library playlist.
   const source = msg.source !== undefined ? msg.source : sourceFromLegacyCourse(msg.course);
   const result = await storage.update((state) =>
     recordCredit(state, { endMs: msg.endMs, active: msg.active, content: msg.content, seconds: msg.seconds, source }, { clockOffsetMs: effectiveOffset(state) }));
@@ -91,7 +95,7 @@ async function onCredit(msg, sender) {
   const unauthorized = result.targetStatus !== undefined && result.targetStatus !== 'registered';
   if (typeof msg.counting === 'boolean') await setTabStatus(sender.tab.id, msg.counting && !unauthorized);
   await refreshBadge(state);
-  return { ok: true, applied: result.appliedSeconds, appliedContent: result.appliedContent, rejected: result.rejected, targetStatus: result.targetStatus, locked: false };
+  return { ok: true, applied: result.appliedSeconds, appliedContent: result.appliedContent, rejected: result.rejected, targetStatus: result.targetStatus, videoStatus: result.videoStatus, playlistStatus: result.playlistStatus, locked: false };
 }
 
 async function onStatus(msg, sender) {
@@ -105,12 +109,36 @@ async function onStatus(msg, sender) {
 // ---- Learning Library --------------------------------------------------------
 const fromExtensionPage = (sender) => typeof sender.url === 'string' && sender.url.startsWith(chrome.runtime.getURL(''));
 
-/** Is this target registered? Asked by the YouTube content script (read-only). */
+/**
+ * Is this target registered? Asked by the YouTube content script (read-only).
+ * For a video, also: a registered playlist it was proven to be a member of
+ * (`known`: the enabled one if any — status 'registered' — else 'disabled').
+ */
 async function onLibraryLookup(msg, sender) {
   if (!sender.tab) return { ok: false, error: 'lookup must come from a tab' };
   const state = await storage.read();
   const { status, item } = targetStatus(state.library, msg.platform, msg.contentType, msg.targetId);
-  return { ok: true, status, title: item?.title || null, subject: item?.subject || null };
+  const known = msg.platform === 'youtube' && msg.contentType === 'video' ? knownMembership(state.library, state.playlistMembership, msg.targetId) : null;
+  return { ok: true, status, title: item?.title || null, subject: item?.subject || null, ...(known ? { known } : {}) };
+}
+
+/**
+ * Video IDs YouTube's playlist panel proved to be in playlist P (content/youtubePlaylist.js).
+ * Merged into the index (never removed); only for playlists in the Library.
+ */
+async function onPlaylistMembers(msg, sender) {
+  if (!sender.tab) return { ok: false, error: 'membership must come from a tab' };
+  if (!Array.isArray(msg.videoIds)) return { ok: false, error: 'videoIds must be a list' };
+  let added = [];
+  await storage.update((state) => {
+    const r = addProvenMembers(state.playlistMembership, state.library, msg.playlistId, msg.videoIds.slice(0, 1000));
+    added = r.added;
+    return added.length ? { state: { ...state, playlistMembership: r.membership } } : undefined;
+  });
+  // Other YouTube tabs may hold a stale "not registered" answer for a newly proven
+  // video (the reporting tab updates its own answers from `added`).
+  if (added.length) await broadcastToTabs({ type: 'library:changed' }, YOUTUBE_TAB_PATTERN, sender.tab.id);
+  return { ok: true, added };
 }
 
 /** Apply a pure library mutation, then tell open YouTube tabs to re-check. */
@@ -119,14 +147,15 @@ async function mutateLibrary(sender, fn) {
   let outcome;
   await storage.update((state) => {
     outcome = fn(state.library || {});
-    return outcome.ok ? { state: { ...state, library: outcome.library } } : undefined;
+    // A playlist removed from the Library takes its proven members with it.
+    return outcome.ok ? { state: { ...state, library: outcome.library, playlistMembership: pruneMembership(state.playlistMembership, outcome.library) } } : undefined;
   });
   if (!outcome.ok) return { ok: false, code: outcome.code, error: outcome.error };
   await broadcastToTabs({ type: 'library:changed' }, YOUTUBE_TAB_PATTERN);
   return { ok: true, item: outcome.item, playlistIgnored: outcome.playlistIgnored };
 }
 
-const onLibraryAdd = (msg, sender) => mutateLibrary(sender, (lib) => addYouTubeVideo(lib, { url: msg.url, title: msg.title, subject: msg.subject }));
+const onLibraryAdd = (msg, sender) => mutateLibrary(sender, (lib) => addYouTubeContent(lib, { url: msg.url, title: msg.title, subject: msg.subject }));
 const onLibrarySetEnabled = (msg, sender) => mutateLibrary(sender, (lib) => setLibraryItemEnabled(lib, msg.id, msg.enabled));
 const onLibraryRemove = (msg, sender) => mutateLibrary(sender, (lib) => removeLibraryItem(lib, msg.id));
 
@@ -164,6 +193,7 @@ async function onReset() {
   const fresh = createDefaultState();
   fresh.settings = { ...current.settings }; // "Reset statistics" keeps preferences
   fresh.library = { ...(current.library || {}) }; // …and the Learning Library (configuration, not statistics)
+  fresh.playlistMembership = { ...(current.playlistMembership || {}) }; // …and its proven playlist members (eligibility, not statistics)
   await storage.reset(fresh);
   await refreshBadge(fresh);
   return { ok: true };
@@ -239,6 +269,7 @@ const HANDLERS = {
   'library:add': onLibraryAdd,
   'library:setEnabled': onLibrarySetEnabled,
   'library:remove': onLibraryRemove,
+  'playlist:members': onPlaylistMembers,
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
